@@ -35,7 +35,7 @@ int main(void) {
     assert(proto_parse_formula("chirp", &formula) && formula == PROTO_CHIRP);
     assert(proto_parse_formula("trochoid", &formula) && formula == PROTO_TROCHOID);
     assert(proto_parse_formula("harmonic_fractal", &formula) && formula == PROTO_HARMONIC_FRACTAL);
-    assert(!proto_parse_formula("spiral", &formula));
+    assert(proto_parse_formula("spiral", &formula) && formula == PROTO_SPIRAL);
     for (int sections = 1; sections <= 16; sections *= 2) {
         assert(proto_valid_section_count(sections));
         cfg.section_count = sections;
@@ -124,6 +124,40 @@ int main(void) {
     assert(anim.current_formula[0] == PROTO_STRAIGHT);
     /* Verify expression is stored correctly in transition */
     assert(strcmp(cfg.sections[0].transitions[0].expression, "sin(2*pi*u)") == 0);
+    /* A true spiral folds back in tangent x, unlike the single-valued graph.
+     * Tests also verify that both regions remain classified and finite. */
+    cfg.section_count = 2;
+    cfg.sections[0].animated = false;
+    cfg.sections[1].animated = false;
+    cfg.sections[0].formula = PROTO_LIGHTNING;
+    cfg.sections[1].formula = PROTO_SPIRAL;
+    cfg.sections[1].amplitude = 30.0f;
+    proto_animation_init(&anim, &cfg);
+    proto_make_frame(&cfg, &anim, &f);
+    assert(f.parametric);
+    bool folds = false;
+    for (int k = PROTO_PROFILE_SAMPLES/2+1; k < PROTO_PROFILE_SAMPLES; ++k)
+        if (f.x_coords[k] < f.x_coords[k-1] - 0.001f) folds = true;
+    assert(folds);
+    assert(proto_signed_side(&f, 120.5f, 8.5f) < 0.0f);
+    assert(proto_signed_side(&f, 120.5f, 150.5f) > 0.0f);
+    for (int y = 0; y < PROTO_HEIGHT; y += 3)
+        for (int x = 0; x < PROTO_WIDTH; x += 3)
+            assert(isfinite(proto_signed_side(&f, x+0.5f,y+0.5f)));
+    /* First automatic entry is executed first, with its target easing. */
+    cfg.sections[0].formula = PROTO_STRAIGHT;
+    cfg.sections[0].animated = true;
+    cfg.sections[0].loop = true;
+    cfg.sections[0].transition_count = 2;
+    cfg.sections[0].transitions[0] = (ProtoTransition){
+        .formula=PROTO_LIGHTNING, .duration=0.1f, .easing=PROTO_EASE_CUBIC_IN_OUT};
+    cfg.sections[0].transitions[1] = (ProtoTransition){
+        .formula=PROTO_STRAIGHT, .duration=0.1f, .easing=PROTO_EASE_SMOOTHSTEP};
+    proto_animation_init(&anim, &cfg);
+    for (int step=0; step<8; ++step)
+        proto_animation_tick(&anim, &cfg, PROTO_FIXED_TIMESTEP);
+    assert(anim.current_formula[0] == PROTO_LIGHTNING);
+    assert(anim.active_easing[0] == PROTO_EASE_CUBIC_IN_OUT);
     puts("curve_math: ok");
     return 0;
 }

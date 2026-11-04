@@ -4,7 +4,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-add_library(proto_curve STATIC src/curve.c src/config.c src/expression.c)
+add_library(proto_curve STATIC src/curve.c src/config.c src/expression.c src/parametric.c)
 target_include_directories(proto_curve PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(proto_curve PUBLIC m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")

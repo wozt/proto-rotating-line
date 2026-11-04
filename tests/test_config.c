@@ -18,8 +18,8 @@ int main(void) {
     char error[256];
     proto_config_defaults(&input);
     assert(proto_config_load(PROTO_SAMPLE_CFG, &input, error, sizeof error));
-    assert(input.section_count == 4);
-    assert(input.sections[4].formula == PROTO_CUSTOM);
+    assert(input.section_count == 2);
+    assert(input.sections[0].animated && input.sections[1].animated);
     input.section_count = 16;
     input.rotation_speed = -15.0f;
     input.show_divider = false;

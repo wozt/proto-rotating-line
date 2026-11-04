@@ -59,3 +59,17 @@ The current geometry uses **single-valued displacement graph sections**;
 these always divide the screen into two regions, even when rotated. Inward
 spirals fold backward and require a parametric path and a separate region
 classifier. The JSON structure leaves room for that later implementation.
+
+## Dual-half animated demo
+
+`config/prototype.json` now shows two independent loops: a regular geometric
+lightning bolt on the first half (straight -> lightning -> straight) and a
+mathematical double-armed spiral on the second half (straight -> sine ->
+spiral -> sine -> straight). Both follow the existing 60 Hz fixed simulation.
+The parametric spiral uses `(x(u,t), y(u,t))` and ray crossing classification;
+it is not a graph or a trochoid approximation. The shape consists of two
+interleaved Archimedean arms, so the boundary remains open and separates the
+two colours all the way across the frame.
+
+The `duration` in JSON is the wait before triggering the given transition;
+actual morphing lasts 0.55 seconds. Use `R` in SDL to load changes.

@@ -1,3 +1,7 @@
+## Current geometry: parametric spiral demo
+
+The `spiral` preset is now available in the two-half animated demo. It uses a double-armed Archimedean spiral with continuous connections to the straight separator on either side. A vertical ray crossing parity test keeps the violet/cyan regions distinct even when x folds back. The older graph-only limitations below describe **custom expressions**, which still use y=f(x) and cannot produce arbitrary parametric paths.
+
 # Formula configuration (C11 math only)
 
 The default configuration lives in [`config/prototype.json`](../config/prototype.json).

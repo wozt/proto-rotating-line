@@ -11,6 +11,8 @@
 #define PROTO_EXPRESSION_LENGTH 160
 #define PROTO_FIXED_TIMESTEP (1.0f / 60.0f)
 #define PROTO_MAX_TRANSITIONS 8
+#define PROTO_CROSS_COLS 672
+#define PROTO_CROSS_MAX 32
 
 typedef enum {
     PROTO_STRAIGHT,
@@ -21,6 +23,7 @@ typedef enum {
     PROTO_CHIRP,
     PROTO_TROCHOID,
     PROTO_HARMONIC_FRACTAL,
+    PROTO_SPIRAL,
     PROTO_CUSTOM,
     PROTO_FORMULA_COUNT
 } ProtoFormula;
@@ -77,12 +80,18 @@ typedef struct {
     int current_transition[PROTO_MAX_SECTIONS];  /* Index in transitions array */
     float transition_time[PROTO_MAX_SECTIONS];   /* Time elapsed in current transition */
     ProtoFormula current_formula[PROTO_MAX_SECTIONS];  /* Current formula for each section */
+    bool finished[PROTO_MAX_SECTIONS];
+    ProtoEasing active_easing[PROTO_MAX_SECTIONS];
     char current_expression[PROTO_MAX_SECTIONS][PROTO_EXPRESSION_LENGTH];  /* For custom formulas in transitions */
 } ProtoAnimation;
 
 typedef struct {
     float cos_angle, sin_angle;
     float offsets[PROTO_PROFILE_SAMPLES];
+    float x_coords[PROTO_PROFILE_SAMPLES];
+    bool parametric;
+    unsigned char cross_count[PROTO_CROSS_COLS];
+    float cross_y[PROTO_CROSS_COLS][PROTO_CROSS_MAX];
 } ProtoFrame;
 
 bool proto_valid_section_count(int count);
