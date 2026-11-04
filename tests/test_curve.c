@@ -370,10 +370,73 @@ int main(void) {
             assert(bolt_max[i] > 0.5f);
         }
         assert(wave_folds[0] == 0 && wave_folds[3] > 0);
-        assert(bolt_max[3] > bolt_max[0] * 1.3f);
+        assert(bolt_max[0] > bolt_max[3] * 1.3f);
         for (int y = 1; y < PROTO_HEIGHT; y += 5)
             for (int x = 1; x < PROTO_WIDTH; x += 7)
                 assert(isfinite(proto_signed_side(&peak, x + .5f, y + .5f)));
+    }
+
+    /* Patch 0013: outward scale and seam continuity. */
+    {
+        ProtoConfig grown;
+        ProtoAnimation anim13;
+        ProtoFrame flat, peak, end, middle;
+        proto_config_defaults(&grown);
+        grown.section_count = 2;
+        grown.rotation_speed = 0.0f;
+        grown.sections[0].formula = PROTO_SPATIAL_LIGHTNING;
+        grown.sections[1].formula = PROTO_SPATIAL_WAVE;
+        for (int side = 0; side < 2; ++side) {
+            grown.sections[side].amplitude = side == 0 ? 7.5f : 6.2f;
+            grown.sections[side].phase_speed = 1.0f / 18.0f;
+            grown.sections[side].cycles = 4.0f;
+            grown.sections[side].gap_pixels = 0.35f;
+            grown.sections[side].repeat_visible = true;
+            grown.sections[side].animated = false;
+            grown.sections[side].transition_count = 0;
+        }
+        proto_animation_init(&anim13, &grown);
+        anim13.time = 0.0f;
+        proto_make_frame(&grown, &anim13, &flat);
+        anim13.time = 9.0f;
+        proto_make_frame(&grown, &anim13, &peak);
+        anim13.time = 4.5f;
+        proto_make_frame(&grown, &anim13, &middle);
+        anim13.time = 18.0f;
+        proto_make_frame(&grown, &anim13, &end);
+        float wave_max[4] = {0}, bolt_max[4] = {0};
+        const float step13 = 336.0f / (PROTO_PROFILE_SAMPLES - 1);
+        for (int k = 0; k < PROTO_PROFILE_SAMPLES; ++k) {
+            const float base = -168.0f + k * step13;
+            assert(fabsf(flat.x_coords[k] - base) < 0.002f);
+            assert(fabsf(end.x_coords[k] - base) < 0.002f);
+            assert(fabsf(flat.offsets[k]) < 0.002f);
+            assert(fabsf(end.offsets[k]) < 0.002f);
+            assert(isfinite(peak.x_coords[k]) && isfinite(peak.offsets[k]));
+            assert(isfinite(middle.x_coords[k]) && isfinite(middle.offsets[k]));
+            /* No seam jumps at any of the 30px boundaries, including x=0. */
+            for (int joint = -120; joint <= 120; joint += 30) {
+                if (fabsf(base - (float)joint) < 0.045f) {
+                    assert(fabsf(peak.offsets[k]) < 0.25f);
+                    assert(fabsf(peak.x_coords[k] - base) < 0.25f);
+                }
+            }
+            if (base >= 0.0f && base < 120.0f) {
+                int cell = (int)(base / 30.0f);
+                if (cell > 3) cell = 3;
+                wave_max[cell] = fmaxf(wave_max[cell], fabsf(peak.offsets[k]));
+            } else if (base > -120.0f && base < 0.0f) {
+                int cell = (int)((base + 120.0f) / 30.0f);
+                if (cell > 3) cell = 3;
+                bolt_max[cell] = fmaxf(bolt_max[cell], fabsf(peak.offsets[k]));
+            }
+        }
+        assert(wave_max[3] > 1.8f * wave_max[0]);
+        assert(bolt_max[0] > 1.8f * bolt_max[3]);
+        assert(wave_max[0] > 0.6f && bolt_max[3] > 0.6f);
+        for (int y = 1; y < PROTO_HEIGHT; y += 5)
+            for (int x = 1; x < PROTO_WIDTH; x += 7)
+                assert(isfinite(proto_signed_side(&peak, x + 0.5f, y + 0.5f)));
     }
 
     puts("curve_math: ok");

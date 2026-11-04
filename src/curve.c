@@ -267,52 +267,68 @@ static float lightning_unit(float p) {
  * Unlike legacy transitions, the curve never switches its formula per step.
  * The entire half-line goes flat -> sine/triangle -> partial curl/zigzag ->
  * fully developed tentacle/lightning -> ... -> flat, continuously. */
+/* Patch 0013: seam-safe outward growth on a single shared breathing clock.
+ * All four portions coexist. Complexity AND size increase away from origin.
+ * Distortion is always zero at the cell edges (both x and y), even mid-morph. */
 static void spatial_gradient_point(const ProtoSection *s, float baseline,
                                    float u, float start, float span,
                                    float time, float *x, float *y) {
     *x = baseline;
     *y = 0.0f;
     if (u < 0.0f || u > 1.0f) return;
-    int count = (int)lroundf(s->cycles);
-    if (count < 1) count = 1;
-    if (count > 16) count = 16;
-    const float cell = span / count;
-    const float gap = fminf(fmaxf(0.0f, s->gap_pixels), 0.65f * cell);
-    int index = (int)(u * count);
-    if (index >= count) index = count - 1;
+    int n = (int)lroundf(s->cycles);
+    if (n < 1) n = 1;
+    if (n > 16) n = 16;
+    const float cell = span / n;
+    const float gap = fminf(fmaxf(0.0f, s->gap_pixels), cell * 0.65f);
+    int index = (int)(u * n);
+    if (index >= n) index = n - 1;
     const float local = u * span - index * cell;
     if (local <= 0.5f * gap || local >= cell - 0.5f * gap) return;
     const float length = cell - gap;
     const float p = (local - 0.5f * gap) / length;
     const float cell_start = start + index * cell + 0.5f * gap;
 
-    /* All portions use one clock: t=0 flat, t=9 expanded, t=18 flat.
-     * A sine-square envelope avoids velocity discontinuities at both ends. */
+    /* On the negative half, cell 0 is the outermost; on the positive half,
+     * cell n-1 is outermost. Distance from the centre is signed correctly. */
+    const float outward = n == 1 ? 1.0f :
+        (start < 0.0f ? (float)(n - 1 - index) / (float)(n - 1) :
+                        (float)index / (float)(n - 1));
+    const float size_scale = 0.72f + 0.82f * outward; /* 1.54/0.72 ~= 2.14 */
+    const float complexity = smoothstep(outward);
     const float phase = 2.0f * PROTO_PI * time * s->phase_speed;
     const float breath = 0.5f - 0.5f * cosf(phase);
-    const float grade = count == 1 ? 1.0f : (float)index / (float)(count - 1);
+    const float detail = smoothstep((breath - 0.10f) / 0.90f);
     const float edge = smoothstep(fminf(10.0f * p, 10.0f * (1.0f - p)));
-    const float development = smoothstep((breath - 0.16f) / 0.84f);
+    const float window = sinf(PROTO_PI * p) * sinf(PROTO_PI * p);
 
     if (s->formula == PROTO_SPATIAL_WAVE) {
-        /* Portion 1 is always a sinus. The subsequent ones progressively
-         * roll into a centred, fine-tipped spiral on the same frame. */
-        const float simple = 0.45f * s->amplitude * sinf(2.0f * PROTO_PI * p) * edge;
-        float coil_x, coil_y;
-        proto_tentacle_gradient_point(p, cell_start, length, s->amplitude,
-                                      &coil_x, &coil_y);
-        const float mix = grade * development;
-        *x = baseline + breath * mix * (coil_x - baseline);
-        *y = breath * ((1.0f - mix) * simple + mix * coil_y);
+        /* Centre: sine. Far edge: full single-arm pointed spiral.
+         * The outer radius grows with distance, with no constant-width loop. */
+        const float sine = 0.36f * s->amplitude * size_scale *
+                           sinf(2.0f * PROTO_PI * p) * edge;
+        float curl_x, curl_y;
+        proto_tentacle_gradient_point(p, cell_start, length,
+                                      s->amplitude * size_scale,
+                                      &curl_x, &curl_y);
+        const float mix = complexity * detail;
+        /* A small extra push along the cell axis makes the outer spiral
+         * develop farther. sin^2 makes this push exactly 0 at both joins. */
+        const float push = 0.16f * s->amplitude * outward * size_scale * window;
+        const float direction = start < 0.0f ? -1.0f : 1.0f;
+        *x = baseline + breath * mix * (curl_x - baseline + direction * push);
+        *y = breath * ((1.0f - mix) * sine + mix * curl_y);
     } else {
-        /* Identical spatial progression for lightning. Simple triangular
-         * wave at cell 1, increasingly angular until cell 4 is jagged. */
-        const float triangle = 0.45f * (1.0f - fabsf(2.0f * p - 1.0f));
+        /* Lightning also grows outward and develops progressively sharper
+         * branches; the high-frequency detail never changes the endpoints. */
+        const float triangle = 0.56f * (1.0f - fabsf(2.0f * p - 1.0f));
         const float jagged = lightning_unit(p);
-        const float fast = fminf(1.0f, breath * 1.5f);
-        const float mix = grade * smoothstep((fast - 0.16f) / 0.84f);
-        *y = s->amplitude * fast *
-             ((1.0f - mix) * triangle + mix * jagged) * edge;
+        const float branch = 0.10f * triangle_unit(5.0f * p) +
+                             0.035f * triangle_unit(11.0f * p);
+        const float fast = smoothstep(fminf(1.0f, 1.50f * breath));
+        const float mix = complexity * smoothstep((fast - 0.12f) / 0.88f);
+        const float shape = (1.0f - mix) * triangle + mix * (jagged + branch);
+        *y = s->amplitude * size_scale * fast * shape * edge;
     }
 }
 

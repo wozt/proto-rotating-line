@@ -153,6 +153,27 @@ int main(void) {
         remove(path);
     }
 #endif
+    /* Patch 0013: outward-growth JSON preset. */
+#ifdef PROTO_SPATIAL_GROWTH_0013
+    {
+        ProtoConfig growth;
+        proto_config_defaults(&growth);
+        assert(proto_config_load(PROTO_SPATIAL_GROWTH_0013,
+                                 &growth, error, sizeof error));
+        assert(growth.section_count == 2);
+        assert(growth.sections[0].formula == PROTO_SPATIAL_LIGHTNING);
+        assert(growth.sections[1].formula == PROTO_SPATIAL_WAVE);
+        for (int side = 0; side < 2; ++side) {
+            const ProtoSection *s = &growth.sections[side];
+            assert(s->cycles == 4.0f && s->repeat_visible);
+            assert(!s->animated && s->transition_count == 0);
+            assert(fabsf(s->gap_pixels - 0.35f) < 0.001f);
+            assert(fabsf(s->phase_speed - 1.0f / 18.0f) < 0.001f);
+        }
+        assert(growth.sections[1].amplitude == 6.2f);
+        assert(growth.sections[0].amplitude == 7.5f);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

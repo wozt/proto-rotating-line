@@ -63,7 +63,7 @@ void proto_tentacle_gradient_point(float u, float start, float span,
     u = fmaxf(0.0f, fminf(1.0f, u));
     const float lead = 0.23f, finish = 0.83f;
     const float centre = 0.51f * span;
-    const float radius0 = fminf(0.85f * amplitude, 0.235f * span);
+    const float radius0 = fminf(0.85f * amplitude, 0.335f * span);
     float px, py;
     if (u <= lead) {
         px = (centre - radius0) * (u / lead);
