@@ -175,6 +175,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    SDL_SetRenderVSync(renderer, 1);
     unsigned char pixels[PROTO_WIDTH * PROTO_HEIGHT * 4];
     ProtoFrame frame;
     ProtoAnimation animation;
@@ -204,7 +205,6 @@ int main(int argc, char **argv) {
         SDL_RenderClear(renderer);
         SDL_RenderTexture(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
-        SDL_Delay(8);
     }
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);

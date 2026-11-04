@@ -207,6 +207,40 @@ static bool color_token(const Json *j, int idx, unsigned char dst[4]) {
     return true;
 }
 
+static bool easing_json(const Json *j, int idx, ProtoEasing *easing) {
+    if (idx < 0 || j->tokens[idx].kind != T_STRING) return false;
+    char name[32];
+    if (!str_token(j, idx, name, sizeof name)) return false;
+    if (!strcmp(name, "linear")) { *easing = PROTO_EASE_LINEAR; return true; }
+    if (!strcmp(name, "smoothstep")) { *easing = PROTO_EASE_SMOOTHSTEP; return true; }
+    return false;
+}
+
+static bool transition_json(const Json *j, int idx, ProtoTransition *t) {
+    if (idx < 0 || j->tokens[idx].kind != T_OBJECT) return false;
+    unsigned seen = 0;
+    for (int key = idx + 1; key < j->tokens[idx].next;) {
+        int value = key + 1;
+        unsigned bit = 0;
+        if (key_is(j, key, "formula")) {
+            bit = 1;
+            char name[PROTO_EXPRESSION_LENGTH];
+            if (!str_token(j, value, name, sizeof name)) return false;
+            if (!proto_parse_formula(name, &t->formula)) return false;
+        } else if (key_is(j, key, "duration")) {
+            bit = 2;
+            if (!scalar(j, value, &t->duration, 0.1f, 60.0f)) return false;
+        } else if (key_is(j, key, "easing")) {
+            bit = 4;
+            if (!easing_json(j, value, &t->easing)) return false;
+        }
+        if (!bit || (seen & bit)) return false;
+        seen |= bit;
+        key = j->tokens[value].next;
+    }
+    return (seen & 1) != 0 && (seen & 2) != 0;
+}
+
 static bool section_json(const Json *j, int idx, ProtoSection *s) {
     if (idx < 0 || j->tokens[idx].kind != T_OBJECT) return false;
     unsigned seen = 0;
@@ -233,9 +267,27 @@ static bool section_json(const Json *j, int idx, ProtoSection *s) {
         } else if (key_is(j, key, "phase_speed")) {
             bit = 8;
             if (!scalar(j, value, &s->phase_speed, -4.0f, 4.0f)) return false;
+        } else if (key_is(j, key, "animated")) {
+            bit = 16;
+            s->animated = j->tokens[value].kind == T_TRUE;
+        } else if (key_is(j, key, "loop")) {
+            bit = 32;
+            s->loop = j->tokens[value].kind == T_TRUE;
+        } else if (key_is(j, key, "transitions")) {
+            bit = 64;
+            if (j->tokens[value].kind != T_ARRAY) return false;
+            int count = 0;
+            for (int i = value + 1; i < j->tokens[value].next; i = j->tokens[i].next) {
+                if (count >= PROTO_MAX_TRANSITIONS || !transition_json(j, i, &s->transitions[count])) return false;
+                ++count;
+            }
+            s->transition_count = count;
         }
-        if (!bit || (seen & bit)) return false;
-        seen |= bit;
+        if (!bit) return false;
+        if (bit & 15) {  /* Required fields: formula, amplitude, cycles, phase_speed */
+            if (seen & bit) return false;
+            seen |= bit;
+        }
         key = j->tokens[value].next;
     }
     return (seen & 1) != 0;
@@ -360,6 +412,14 @@ static int write_string(FILE *file, const char *s) {
     return fputc('"', file) == EOF ? -1 : 0;
 }
 
+static const char *easing_name(ProtoEasing easing) {
+    switch (easing) {
+        case PROTO_EASE_LINEAR: return "linear";
+        case PROTO_EASE_SMOOTHSTEP: return "smoothstep";
+        default: return "linear";
+    }
+}
+
 bool proto_config_save(const char *path, const ProtoConfig *config, char *error, size_t size) {
     if (!proto_valid_section_count(config->section_count)) {
         set_error(error, size, "Invalid section count");
@@ -396,9 +456,25 @@ bool proto_config_save(const char *path, const ProtoConfig *config, char *error,
         const char *name = s->formula == PROTO_CUSTOM ? s->expression : proto_formula_name(s->formula);
         ok = fprintf(file, "    {\"formula\": ") >= 0 && write_string(file, name) == 0 &&
              fprintf(file, ", \"amplitude\": %.3f, \"cycles\": %.3f, "
-                           "\"phase_speed\": %.3f}%s\n",
-                     s->amplitude, s->cycles, s->phase_speed,
-                     i + 1 == PROTO_MAX_SECTIONS ? "" : ",") >= 0;
+                           "\"phase_speed\": %.3f",
+                     s->amplitude, s->cycles, s->phase_speed) >= 0;
+        if (ok && s->animated) {
+            ok = fprintf(file, ", \"animated\": true") >= 0;
+            if (ok && s->loop) ok = fprintf(file, ", \"loop\": true") >= 0;
+            if (ok && s->transition_count > 0) {
+                ok = fprintf(file, ", \"transitions\": [") >= 0;
+                for (int t = 0; ok && t < s->transition_count; ++t) {
+                    const ProtoTransition *trans = &s->transitions[t];
+                    ok = fprintf(file, "%s{\"formula\": \"%s\", \"duration\": %.3f, \"easing\": \"%s\"}",
+                                 t == 0 ? "" : ", ",
+                                 proto_formula_name(trans->formula),
+                                 trans->duration,
+                                 easing_name(trans->easing)) >= 0;
+                }
+                if (ok) ok = fprintf(file, "]") >= 0;
+            }
+        }
+        if (ok) ok = fprintf(file, "}%s\n", i + 1 == PROTO_MAX_SECTIONS ? "" : ",") >= 0;
     }
     if (ok) ok = fprintf(file, "  ]\n}\n") >= 0;
     if (fclose(file) != 0) ok = false;

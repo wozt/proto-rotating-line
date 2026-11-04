@@ -6,6 +6,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static void check_sides(const ProtoConfig *config, ProtoAnimation *animation) {
     ProtoFrame frame;
@@ -80,6 +81,23 @@ int main(void) {
     anim.paused = false;
     proto_animation_tick(&anim, &cfg, 0.1f);
     assert(anim.time > before);
+    /* Test fixed timestep: multiple small deltas should accumulate */
+    anim.time = 0.0f;
+    for (int i = 0; i < 10; ++i) proto_animation_tick(&anim, &cfg, 0.005f);
+    assert(anim.time >= PROTO_FIXED_TIMESTEP);
+    /* Test animation transitions setup */
+    cfg.sections[0].animated = true;
+    cfg.sections[0].loop = true;
+    cfg.sections[0].transition_count = 2;
+    cfg.sections[0].transitions[0] = (ProtoTransition){.formula = PROTO_SINE, .duration = 1.0f, .easing = PROTO_EASE_SMOOTHSTEP};
+    cfg.sections[0].transitions[1] = (ProtoTransition){.formula = PROTO_STRAIGHT, .duration = 1.0f, .easing = PROTO_EASE_SMOOTHSTEP};
+    proto_animation_init(&anim, &cfg);
+    assert(anim.current_formula[0] == cfg.sections[0].formula);
+    assert(anim.current_transition[0] == 0);
+    assert(anim.transition_time[0] == 0.0f);
+    /* Verify non-animated sections don't have transitions */
+    assert(cfg.sections[1].animated == false);
+    assert(cfg.sections[1].transition_count == 0);
     puts("curve_math: ok");
     return 0;
 }

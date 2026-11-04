@@ -47,7 +47,10 @@ void proto_config_defaults(ProtoConfig *config) {
         config->sections[i] = (ProtoSection){.formula = patterns[i % 4],
                                              .amplitude = 14.0f,
                                              .cycles = 3.0f,
-                                             .phase_speed = 0.14f};
+                                             .phase_speed = 0.14f,
+                                             .animated = false,
+                                             .loop = false,
+                                             .transition_count = 0};
     }
 }
 
@@ -56,17 +59,55 @@ void proto_animation_init(ProtoAnimation *animation, const ProtoConfig *config) 
     for (int i = 0; i < PROTO_MAX_SECTIONS; ++i) {
         animation->previous[i] = config->sections[i];
         animation->morph[i] = 1.0f;
+        animation->current_transition[i] = 0;
+        animation->transition_time[i] = 0.0f;
+        animation->current_formula[i] = config->sections[i].formula;
     }
 }
 
 void proto_animation_tick(ProtoAnimation *animation, const ProtoConfig *config, float dt) {
     if (animation->paused || !isfinite(dt) || dt <= 0.0f) return;
     if (dt > 0.1f) dt = 0.1f;
-    animation->time += dt;
-    animation->rotation_degrees = fmodf(animation->rotation_degrees +
-                                        config->rotation_speed * dt, 360.0f);
-    for (int i = 0; i < PROTO_MAX_SECTIONS; ++i)
-        animation->morph[i] = clamp01(animation->morph[i] + dt / PROTO_MORPH_SECONDS);
+    animation->accumulator += dt;
+    while (animation->accumulator >= PROTO_FIXED_TIMESTEP) {
+        animation->time += PROTO_FIXED_TIMESTEP;
+        animation->rotation_degrees = fmodf(animation->rotation_degrees +
+                                            config->rotation_speed * PROTO_FIXED_TIMESTEP, 360.0f);
+        for (int i = 0; i < PROTO_MAX_SECTIONS; ++i) {
+            animation->morph[i] = clamp01(animation->morph[i] + PROTO_FIXED_TIMESTEP / PROTO_MORPH_SECONDS);
+            /* Handle automatic transitions for animated sections */
+            const ProtoSection *s = &config->sections[i];
+            if (s->animated && s->transition_count > 0 && animation->morph[i] >= 1.0f) {
+                animation->transition_time[i] += PROTO_FIXED_TIMESTEP;
+                const ProtoTransition *trans = &s->transitions[animation->current_transition[i]];
+                if (animation->transition_time[i] >= trans->duration) {
+                    /* Move to next transition */
+                    animation->transition_time[i] = 0.0f;
+                    animation->current_transition[i]++;
+                    if (animation->current_transition[i] >= s->transition_count) {
+                        if (s->loop) {
+                            animation->current_transition[i] = 0;
+                        } else {
+                            animation->current_transition[i] = s->transition_count - 1;
+                            /* Stop animating when we reach the end */
+                            continue;
+                        }
+                    }
+                    /* Trigger the formula change to the next transition's target */
+                    const ProtoTransition *next_trans = &s->transitions[animation->current_transition[i]];
+                    ProtoFormula target = next_trans->formula;
+                    if (animation->current_formula[i] != target) {
+                        ProtoSection temp = *s;
+                        temp.formula = animation->current_formula[i];
+                        animation->previous[i] = temp;
+                        animation->morph[i] = 0.0f;
+                        animation->current_formula[i] = target;
+                    }
+                }
+            }
+        }
+        animation->accumulator -= PROTO_FIXED_TIMESTEP;
+    }
 }
 
 void proto_animation_change_formula(ProtoAnimation *animation, ProtoConfig *config,
@@ -132,7 +173,12 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
         if (index >= count) index = count - 1;
         float u = along - index;
         const ProtoSection *s = &config->sections[index];
-        float next = formula_value(s, u, animation->time);
+        /* Use the animation's current formula for animated sections */
+        ProtoSection temp_section = *s;
+        if (s->animated) {
+            temp_section.formula = animation->current_formula[index];
+        }
+        float next = formula_value(&temp_section, u, animation->time);
         float old = formula_value(&animation->previous[index], u, animation->time);
         float blend = smoothstep(animation->morph[index]);
         frame->offsets[i] = old + (next - old) * blend;

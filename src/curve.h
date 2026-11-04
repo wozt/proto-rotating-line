@@ -9,6 +9,8 @@
 #define PROTO_MAX_SECTIONS 16
 #define PROTO_PROFILE_SAMPLES 2049
 #define PROTO_EXPRESSION_LENGTH 160
+#define PROTO_FIXED_TIMESTEP (1.0f / 60.0f)
+#define PROTO_MAX_TRANSITIONS 8
 
 typedef enum {
     PROTO_STRAIGHT,
@@ -19,12 +21,28 @@ typedef enum {
     PROTO_FORMULA_COUNT
 } ProtoFormula;
 
+typedef enum {
+    PROTO_EASE_LINEAR,
+    PROTO_EASE_SMOOTHSTEP,
+    PROTO_EASE_COUNT
+} ProtoEasing;
+
+typedef struct {
+    ProtoFormula formula;
+    float duration;  /* Seconds for this transition */
+    ProtoEasing easing;
+} ProtoTransition;
+
 typedef struct {
     ProtoFormula formula;
     float amplitude;     /* Pixels perpendicular to the original divider. */
     float cycles;        /* Repetitions within one section. */
     float phase_speed;   /* Cycles per second, signed. */
     char expression[PROTO_EXPRESSION_LENGTH]; /* For formula = custom. */
+    bool animated;       /* Whether this section uses automatic transitions */
+    bool loop;           /* Whether transitions repeat cyclically */
+    int transition_count;
+    ProtoTransition transitions[PROTO_MAX_TRANSITIONS];
 } ProtoSection;
 
 typedef struct {
@@ -42,8 +60,12 @@ typedef struct {
     float time;
     float rotation_degrees;
     bool paused;
+    float accumulator;  /* Delta time accumulator for fixed timestep */
     ProtoSection previous[PROTO_MAX_SECTIONS];
     float morph[PROTO_MAX_SECTIONS];
+    int current_transition[PROTO_MAX_SECTIONS];  /* Index in transitions array */
+    float transition_time[PROTO_MAX_SECTIONS];   /* Time elapsed in current transition */
+    ProtoFormula current_formula[PROTO_MAX_SECTIONS];  /* Current formula for each section */
 } ProtoAnimation;
 
 typedef struct {

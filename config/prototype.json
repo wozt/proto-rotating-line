@@ -9,7 +9,7 @@
     "divider": "#F8F8FD"
   },
   "sections": [
-    {"formula": "lightning", "amplitude": 15, "cycles": 3, "phase_speed": 0.10},
+    {"formula": "straight", "amplitude": 15, "cycles": 1, "phase_speed": 0, "animated": true, "loop": true, "transitions": [{"formula": "sine", "duration": 2.0, "easing": "smoothstep"}, {"formula": "straight", "duration": 2.0, "easing": "smoothstep"}]},
     {"formula": "sine", "amplitude": 14, "cycles": 2, "phase_speed": 0.16},
     {"formula": "fractal", "amplitude": 14, "cycles": 2, "phase_speed": 0.12},
     {"formula": "straight", "amplitude": 0, "cycles": 1, "phase_speed": 0},
