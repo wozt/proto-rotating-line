@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -78,6 +78,7 @@ void proto_animation_init(ProtoAnimation *animation, const ProtoConfig *config) 
     for (int i = 0; i < PROTO_MAX_SECTIONS; ++i) {
         animation->previous[i] = config->sections[i];
         animation->morph[i] = 1.0f;
+        animation->morph_seconds[i] = PROTO_MORPH_SECONDS;
         animation->active_easing[i] = PROTO_EASE_SMOOTHSTEP;
         animation->current_transition[i] = 0;
         animation->transition_time[i] = 0.0f;
@@ -86,7 +87,6 @@ void proto_animation_init(ProtoAnimation *animation, const ProtoConfig *config) 
         animation->current_expression[i][PROTO_EXPRESSION_LENGTH - 1] = '\0';
     }
 }
-
 void proto_animation_tick(ProtoAnimation *animation, const ProtoConfig *config, float dt) {
     if (animation->paused || !isfinite(dt) || dt <= 0.0f) return;
     if (dt > 0.1f) dt = 0.1f;
@@ -96,39 +96,38 @@ void proto_animation_tick(ProtoAnimation *animation, const ProtoConfig *config, 
         animation->rotation_degrees = fmodf(animation->rotation_degrees +
                                             config->rotation_speed * PROTO_FIXED_TIMESTEP, 360.0f);
         for (int i = 0; i < PROTO_MAX_SECTIONS; ++i) {
-            animation->morph[i] = clamp01(animation->morph[i] + PROTO_FIXED_TIMESTEP / PROTO_MORPH_SECONDS);
-            /* Each transition entry is the NEXT target, not the current one.
-             * Execute entry zero first and never repeat the final non-loop step. */
+            float seconds = animation->morph_seconds[i];
+            if (!(seconds > 0.0f)) seconds = PROTO_MORPH_SECONDS;
+            animation->morph[i] = clamp01(animation->morph[i] + PROTO_FIXED_TIMESTEP / seconds);
             const ProtoSection *s = &config->sections[i];
-            if (s->animated && s->transition_count > 0 && !animation->finished[i] &&
-                animation->morph[i] >= 1.0f) {
-                animation->transition_time[i] += PROTO_FIXED_TIMESTEP;
-                const ProtoTransition *trans = &s->transitions[animation->current_transition[i]];
-                if (animation->transition_time[i] + 1.0e-5f >= trans->duration) {
-                    animation->transition_time[i] = 0.0f;
-                    bool changed = animation->current_formula[i] != trans->formula ||
-                       (trans->formula == PROTO_CUSTOM &&
-                        strcmp(animation->current_expression[i], trans->expression));
-                    if (changed) {
-                        ProtoSection prior = *s;
-                        prior.formula = animation->current_formula[i];
-                        memcpy(prior.expression, animation->current_expression[i],
-                               sizeof prior.expression);
-                        animation->previous[i] = prior;
-                        animation->current_formula[i] = trans->formula;
-                        memcpy(animation->current_expression[i], trans->expression,
-                               sizeof trans->expression);
-                        animation->active_easing[i] = trans->easing;
-                        animation->morph[i] = 0.0f;
-                    }
-                    ++animation->current_transition[i];
-                    if (animation->current_transition[i] >= s->transition_count) {
-                        if (s->loop) animation->current_transition[i] = 0;
-                        else {
-                            animation->finished[i] = true;
-                            animation->current_transition[i] = s->transition_count-1;
-                        }
-                    }
+            if (!s->animated || s->transition_count == 0 || animation->finished[i] ||
+                animation->morph[i] < 1.0f) continue;
+            animation->transition_time[i] += PROTO_FIXED_TIMESTEP;
+            const ProtoTransition *trans = &s->transitions[animation->current_transition[i]];
+            if (animation->transition_time[i] + 1.0e-5f < trans->duration) continue;
+            animation->transition_time[i] = 0.0f;
+            bool changed = animation->current_formula[i] != trans->formula ||
+                (trans->formula == PROTO_CUSTOM &&
+                 strcmp(animation->current_expression[i], trans->expression) != 0);
+            if (changed) {
+                ProtoSection prior = *s;
+                prior.formula = animation->current_formula[i];
+                memcpy(prior.expression, animation->current_expression[i], sizeof prior.expression);
+                animation->previous[i] = prior;
+                animation->current_formula[i] = trans->formula;
+                memcpy(animation->current_expression[i], trans->expression,
+                       sizeof animation->current_expression[i]);
+                animation->active_easing[i] = trans->easing;
+                animation->morph_seconds[i] = trans->morph_duration > 0.0f ?
+                    trans->morph_duration : PROTO_MORPH_SECONDS;
+                animation->morph[i] = 0.0f;
+            }
+            ++animation->current_transition[i];
+            if (animation->current_transition[i] >= s->transition_count) {
+                if (s->loop) animation->current_transition[i] = 0;
+                else {
+                    animation->finished[i] = true;
+                    animation->current_transition[i] = s->transition_count - 1;
                 }
             }
         }
@@ -216,6 +215,9 @@ static float formula_value(const ProtoSection *s, float u, float time) {
         v = sum / total;
         break;
     }
+    case PROTO_TRIANGLE:
+        v = 0.38f * (1.0f - 4.0f * fabsf(fractf_pos(a + 0.25f) - 0.5f));
+        break;
     case PROTO_SPIRAL:
         return 0.0f; /* Handled by parametric x(u),y(u), not y=f(x). */
     case PROTO_CUSTOM: {
@@ -234,6 +236,85 @@ static float formula_value(const ProtoSection *s, float u, float time) {
     return s->amplitude * edge * v;
 }
 
+/* Periodic motifs are repeated along the visible half-line. A flat gap
+ * occupies the requested number of logical pixels between successive cells.
+ * Keeping motif endpoints on y=0 preserves the region boundary. */
+static float triangle_unit(float p) {
+    return 1.0f - 4.0f * fabsf(fractf_pos(p + 0.25f) - 0.5f);
+}
+
+/* Deterministic, angular three-scale lightning: large hooked stroke first,
+ * two nested zigzags second/third.  Unlike a triangular wave it contains
+ * several sharp, asymmetric changes of direction inside each motif. */
+static float lightning_unit(float p) {
+    const float at[] = {0.0f, 0.11f, 0.22f, 0.33f, 0.43f,
+                        0.55f, 0.65f, 0.76f, 0.88f, 1.0f};
+    const float h[] = {0.0f, -0.18f, 0.96f, 0.12f, 0.38f,
+                       -1.00f, -0.10f, 0.42f, -0.22f, 0.0f};
+    float large = 0.0f;
+    for (int i = 0; i < 9; ++i) {
+        if (p <= at[i + 1]) {
+            float q = (p - at[i]) / (at[i + 1] - at[i]);
+            large = h[i] + (h[i + 1] - h[i]) * q;
+            break;
+        }
+    }
+    return 0.86f * large + 0.10f * triangle_unit(3.0f * p) +
+           0.04f * triangle_unit(9.0f * p);
+}
+
+static void shape_point(const ProtoSection *s, float baseline, float u,
+                        float start, float span, float t, float curl,
+                        float *x, float *y) {
+    *x = baseline;
+    *y = 0.0f;
+    if (u < 0.0f || u > 1.0f) return;
+    bool repeated = s->formula == PROTO_SPIRAL ||
+        ((s->repeat_visible || s->gap_pixels > 0.0f) &&
+         (s->formula == PROTO_SINE || s->formula == PROTO_LIGHTNING ||
+          s->formula == PROTO_TRIANGLE));
+    if (!repeated) {
+        *y = formula_value(s, u, t);
+        return;
+    }
+    int n = (int)lroundf(s->cycles);
+    if (n < 1) n = 1;
+    if (n > 16) n = 16;
+    float cell = span / n;
+    float gap = fminf(s->gap_pixels, cell * 0.65f);
+    float scaled = u * n;
+    int index = (int)scaled;
+    if (index >= n) index = n - 1;
+    float local = u * span - index * cell;
+    float start_local = gap * 0.5f;
+    float length = cell - gap;
+    if (local <= start_local || local >= start_local + length) return;
+    float p = (local - start_local) / length;
+    float cell_start = start + index * cell + start_local;
+    if (s->formula == PROTO_SPIRAL) {
+        proto_spiral_point(p, cell_start, length, s->amplitude, curl, x, y);
+        return;
+    }
+    float wave;
+    switch (s->formula) {
+    case PROTO_LIGHTNING:
+        wave = lightning_unit(p);
+        break;
+    case PROTO_TRIANGLE:
+        /* One compact, single-sided triangular tooth per cell. */
+        wave = 0.42f * (1.0f - fabsf(2.0f * p - 1.0f));
+        break;
+
+    case PROTO_SINE:
+        wave = sinf(2.0f * PROTO_PI * (p + s->phase_speed * t));
+        break;
+    default:
+        return;
+    }
+    /* Fade only within the last tenth of a motif: exact flat junctions. */
+    float edge = smoothstep(fminf(p * 10.0f, (1.0f - p) * 10.0f));
+    *y = s->amplitude * wave * edge;
+}
 void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation,
                       ProtoFrame *frame) {
     const float radians = animation->rotation_degrees * (PROTO_PI / 180.0f);
@@ -241,37 +322,56 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
     frame->sin_angle = sinf(radians);
     frame->parametric = false;
     const int count = config->section_count;
+    /* Projected half-extent of the rotated 240x160 rectangle. With
+     * repeat_visible enabled, eight motifs are spread over the actual
+     * on-screen half-line rather than over its invisible off-screen tail. */
+    const float visible = PROTO_WIDTH * 0.5f * fabsf(frame->cos_angle) +
+                          PROTO_HEIGHT * 0.5f * fabsf(frame->sin_angle);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES; ++i) {
         float along = (float)i / (PROTO_PROFILE_SAMPLES - 1) * count;
         int index = (int)along;
         if (index >= count) index = count - 1;
-        float u = along - index;
-        const float span = PROTO_SPLIT_SPAN / count;
-        const float start = -PROTO_HALF_SPAN + index * span;
-        const float base = start + u * span;
+        const float local_u = along - index;
+        const float section_span = PROTO_SPLIT_SPAN / count;
+        const float section_start = -PROTO_HALF_SPAN + index * section_span;
+        const float base = section_start + local_u * section_span;
         const ProtoSection *section = &config->sections[index];
+        float start = section_start, span = section_span;
+        if (count == 2 && section->repeat_visible) {
+            start = index == 0 ? -visible : 0.0f;
+            span = visible;
+        }
+        const float u = (base - start) / span;
         ProtoSection next = *section;
         if (section->animated) {
             next.formula = animation->current_formula[index];
-            if (next.formula == PROTO_CUSTOM) {
+            if (next.formula == PROTO_CUSTOM)
                 memcpy(next.expression, animation->current_expression[index],
                        sizeof next.expression);
-            }
         }
         const ProtoSection *previous = &animation->previous[index];
-        float xn=base, yn=0.0f, xp=base, yp=0.0f;
-        if (next.formula == PROTO_SPIRAL)
-            proto_spiral_point(u, start, span, next.amplitude, &xn, &yn);
-        else yn = formula_value(&next, u, animation->time);
-        if (previous->formula == PROTO_SPIRAL)
-            proto_spiral_point(u, start, span, previous->amplitude, &xp, &yp);
-        else yp = formula_value(previous, u, animation->time);
         float blend = smoothstep(animation->morph[index]);
         if (section->animated && section->transition_count > 0)
             blend = apply_easing(animation->morph[index], animation->active_easing[index]);
-        frame->x_coords[i] = xp + (xn-xp)*blend;
-        frame->offsets[i] = yp + (yn-yp)*blend;
-        if (next.formula == PROTO_SPIRAL ||
+        float xn, yn, xp, yp;
+        shape_point(&next, base, u, start, span, animation->time,
+                    next.formula == PROTO_SPIRAL ? blend : 1.0f, &xn, &yn);
+        shape_point(previous, base, u, start, span, animation->time,
+                    previous->formula == PROTO_SPIRAL ? 1.0f - blend : 1.0f, &xp, &yp);
+        /* Spiral curl is already driven by morph. Applying the blend a
+         * second time would square its radius and hide the actual coil. */
+        if (next.formula == PROTO_SPIRAL && previous->formula != PROTO_SPIRAL) {
+            frame->x_coords[i] = xn + (xp - base) * (1.0f - blend);
+            frame->offsets[i] = yn + yp * (1.0f - blend);
+        } else if (previous->formula == PROTO_SPIRAL && next.formula != PROTO_SPIRAL) {
+            frame->x_coords[i] = xp + (xn - base) * blend;
+            frame->offsets[i] = yp + yn * blend;
+        } else {
+            frame->x_coords[i] = xp + (xn - xp) * blend;
+            frame->offsets[i] = yp + (yn - yp) * blend;
+        }
+
+        if ((next.formula == PROTO_SPIRAL && blend > 0.0f) ||
             (previous->formula == PROTO_SPIRAL && blend < 1.0f))
             frame->parametric = true;
     }

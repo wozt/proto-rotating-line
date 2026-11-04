@@ -8,37 +8,33 @@
 #define RANGE 168.0f
 #define X_STEP (0.5f)
 
-/* The incoming and outgoing spiral arms are separated by PI at equal radii.
- * They join at their centre and leave to opposite ends of the baseline.
- * A straight connector at each end preserves an open, two-sided separator.
- * Unlike an y=f(x) graph, the tangent coordinate reverses within the curl. */
-void proto_spiral_point(float u, float section_start, float section_span,
-                        float amplitude, float *x, float *y) {
-    const float centre = section_span * 0.5f;
-    const float radius = fminf(42.0f, amplitude * 1.30f);
-    const float start = centre - radius;
-    const float finish = centre + radius;
-    const float left = 0.18f, inner = 0.50f, right = 0.82f;
-    float localx = 0.0f, localy = 0.0f;
-    if (u < left) {
-        localx = (u / left) * start;
-    } else if (u <= inner) {
-        float v = (u - left) / (inner - left);
-        float r = radius * (1.0f - v);
-        float a = PI + 3.0f * PI * v;
-        localx = centre + r * cosf(a);
-        localy = r * sinf(a);
-    } else if (u <= right) {
-        float v = (u - inner) / (right - inner);
-        float r = radius * v;
-        float a = 5.0f * PI - 3.0f * PI * v;
-        localx = centre + r * cosf(a);
-        localy = r * sinf(a);
+/* A SINGLE Archimedean-style arm per cell, not two mirrored curls.
+ * The radius decreases to zero at its inner tip.  The outgoing connector
+ * stays straight, so it cannot look like a second, competing spiral.
+ * curl [0,1] unwinds both the angle and the displacement continuously. */
+void proto_spiral_point(float u, float cell_start, float cell_span,
+                        float amplitude, float curl, float *x, float *y) {
+    const float pi = 3.14159265358979323846f;
+    curl = fmaxf(0.0f, fminf(1.0f, curl));
+    u = fmaxf(0.0f, fminf(1.0f, u));
+    const float lead = 0.12f, tip = 0.77f;
+    const float centre = 0.49f * cell_span;
+    const float radius = fminf(amplitude * 1.15f, 0.37f * cell_span);
+    float bx = u * cell_span;
+    float coiled_x, coiled_y = 0.0f;
+    if (u < lead) {
+        coiled_x = (u / lead) * (centre - radius);
+    } else if (u < tip) {
+        const float v = (u - lead) / (tip - lead);
+        const float r = radius * powf(1.0f - v, 1.10f);
+        const float theta = pi + (3.60f * pi) * curl * v;
+        coiled_x = centre + r * cosf(theta);
+        coiled_y = r * sinf(theta);
     } else {
-        localx = finish + (u - right) / (1.0f - right) * (section_span - finish);
+        coiled_x = centre + (u - tip) / (1.0f - tip) * (cell_span - centre);
     }
-    *x = section_start + localx;
-    *y = localy;
+    *x = cell_start + bx + curl * (coiled_x - bx);
+    *y = curl * coiled_y;
 }
 
 /* For the entire rotated polyline, intersect a vertical ray with the open
