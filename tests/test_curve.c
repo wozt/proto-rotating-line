@@ -186,7 +186,7 @@ int main(void) {
             if (fabsf(f.offsets[i]) > max_height) max_height = fabsf(f.offsets[i]);
         }
         assert(curled);
-        assert(max_height < 7.0f);
+        assert(max_height < 8.0f); /* Wider crests remain within compact 8x bounds. */
     }
     /* Tip approaches zero radius and every motif joins flat segments. */
     for (int n = 1; n < 8; ++n) {
@@ -262,6 +262,54 @@ int main(void) {
     for (int y = 0; y < PROTO_HEIGHT; y += 4)
         for (int x = 0; x < PROTO_WIDTH; x += 4)
             assert(isfinite(proto_signed_side(&f, x + .5f, y + .5f)));
+    /* Patch 0006: broad curling wavecrest, narrowing to a sharp point. */
+    {
+        float cx = 0.70f * 28.0f, cy = 0.63f * fminf(0.85f * 14.0f, 0.34f * 28.0f);
+        float crest_x, crest_y, tip_x, tip_y;
+        proto_spiral_point(0.37f, 0.0f, 28.0f, 14.0f, 1.0f, &crest_x, &crest_y);
+        assert(crest_y > 9.0f); /* Slim rising body while retaining a crest. */
+        float last_r = 1.0e6f;
+        for (int j = 0; j <= 10; ++j) {
+            float u = 0.37f + (0.88f - 0.37f) * (float)j / 10.0f;
+            float px, py;
+            proto_spiral_point(u, 0.0f, 28.0f, 14.0f, 1.0f, &px, &py);
+            float r = hypotf(px - cx, py - cy);
+            assert(r <= last_r + 0.001f);
+            last_r = r;
+        }
+        proto_spiral_point(0.88f, 0.0f, 28.0f, 14.0f, 1.0f, &tip_x, &tip_y);
+        assert(hypotf(tip_x - cx, tip_y - cy) < 0.002f);
+        assert(crest_y > tip_y * 1.5f); /* Silhouette tapers strongly. */
+        for (int j = 0; j <= 20; ++j) {
+            float u = (float)j / 20.0f, px, py;
+            proto_spiral_point(u, 0.0f, 28.0f, 14.0f, 0.0f, &px, &py);
+            assert(fabsf(px - u * 28.0f) < 0.002f);
+            assert(fabsf(py) < 0.002f);
+        }
+        proto_spiral_point(0.0f, 0.0f, 28.0f, 14.0f, 1.0f, &tip_x, &tip_y);
+        assert(fabsf(tip_y) < 0.002f);
+        proto_spiral_point(1.0f, 0.0f, 28.0f, 14.0f, 1.0f, &tip_x, &tip_y);
+        assert(fabsf(tip_y) < 0.002f && fabsf(tip_x - 28.0f) < 0.002f);
+    }
+    /* Patch 0007: a genuine slender inward taper, with no detached tip. */
+    {
+        const float span = 28.0f, amplitude = 14.0f;
+        const float crest_y = fminf(0.85f * amplitude, 0.34f * span);
+        const float cx = 0.70f * span, cy = 0.63f * crest_y;
+        float x, y;
+        proto_spiral_point(0.37f, 0.0f, span, amplitude, 1.0f, &x, &y);
+        assert(y > 9.0f && y < 10.0f);
+        float outer, inner;
+        proto_spiral_point(0.37f + (0.88f - 0.37f) * 0.55f,
+                           0.0f, span, amplitude, 1.0f, &x, &y);
+        outer = hypotf(x - cx, y - cy);
+        proto_spiral_point(0.37f + (0.88f - 0.37f) * 0.88f,
+                           0.0f, span, amplitude, 1.0f, &x, &y);
+        inner = hypotf(x - cx, y - cy);
+        assert(outer > 2.0f && inner < outer * 0.20f);
+        proto_spiral_point(0.88f, 0.0f, span, amplitude, 1.0f, &x, &y);
+        assert(hypotf(x - cx, y - cy) < 0.002f);
+    }
     puts("curve_math: ok");
     return 0;
 }

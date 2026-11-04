@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 
 static void overwrite(const char *path, const char *text) {
@@ -20,6 +21,9 @@ int main(void) {
     assert(proto_config_load(PROTO_SAMPLE_CFG, &input, error, sizeof error));
     assert(input.section_count == 2);
     assert(input.sections[0].animated && input.sections[1].animated);
+    input.sections[0].gap_pixels = 3.0f;
+    input.sections[0].repeat_visible = true;
+    input.sections[0].transitions[0].morph_duration = 7.5f;
     input.section_count = 16;
     input.rotation_speed = -15.0f;
     input.show_divider = false;
@@ -33,10 +37,15 @@ int main(void) {
     assert(proto_config_load(path, &loaded, error, sizeof error));
     assert(loaded.section_count == 16);
     assert(loaded.rotation_speed == -15.0f);
+    assert(fabsf(loaded.sections[0].gap_pixels - 3.0f) < 0.001f);
+    assert(loaded.sections[0].repeat_visible);
+    assert(fabsf(loaded.sections[0].transitions[0].morph_duration - 7.5f) < 0.001f);
     assert(!loaded.show_divider);
     assert(loaded.violet[0] == 0x12 && loaded.violet[3] == 0xBB && loaded.cyan[1] == 0x34);
     assert(loaded.sections[15].formula == PROTO_CUSTOM);
     assert(!strcmp(loaded.sections[15].expression, input.sections[15].expression));
+    overwrite(path, "{\"section_count\":2,\"sections\":[{\"formula\":\"straight\",\"gap_pixels\":6},{\"formula\":\"straight\"}]}");
+    assert(!proto_config_load(path, &loaded, error, sizeof error));
     overwrite(path, "{\"section_count\":3}");
     assert(!proto_config_load(path, &loaded, error, sizeof error));
     assert(loaded.section_count == 16); /* No partial mutation. */
@@ -58,6 +67,63 @@ int main(void) {
     overwrite(path, "{\"section_count\":1,}");
     assert(!proto_config_load(path, &loaded, error, sizeof error));
     remove(path);
+    /* Patch 0006: both sides cycle with exactly the same timings. */
+#ifdef PROTO_WAVECREST_CFG
+    {
+        ProtoConfig synced;
+        proto_config_defaults(&synced);
+        assert(proto_config_load(PROTO_WAVECREST_CFG, &synced, error, sizeof error));
+        assert(synced.section_count == 2);
+        assert(synced.sections[0].formula == PROTO_LIGHTNING);
+        assert(synced.sections[1].formula == PROTO_SPIRAL);
+        assert(synced.sections[0].transition_count == 4);
+        assert(synced.sections[1].transition_count == 4);
+        for (int t = 0; t < 4; ++t) {
+            const ProtoTransition *a = &synced.sections[0].transitions[t];
+            const ProtoTransition *b = &synced.sections[1].transitions[t];
+            assert(fabsf(a->duration - b->duration) < 0.0001f);
+            assert(fabsf(a->morph_duration - b->morph_duration) < 0.0001f);
+            assert(a->easing == b->easing);
+        }
+        ProtoAnimation sync;
+        proto_animation_init(&sync, &synced);
+        for (int step = 0; step < 5300; ++step) {
+            proto_animation_tick(&sync, &synced, PROTO_FIXED_TIMESTEP);
+            assert(sync.current_transition[0] == sync.current_transition[1]);
+            assert(fabsf(sync.morph[0] - sync.morph[1]) < 0.0001f);
+            if (step % 500 == 0) {
+                ProtoFrame frame;
+                proto_make_frame(&synced, &sync, &frame);
+                assert(isfinite(proto_signed_side(&frame, 120.5f, 40.5f)));
+            }
+        }
+    }
+#endif
+    /* Patch 0007: loaded profile speeds up globally by x1.7, with a 2/3
+     * morph-time ratio for lightning and four motifs on both halves. */
+#ifdef PROTO_FILIFORM_CFG
+    {
+        ProtoConfig fast;
+        proto_config_defaults(&fast);
+        assert(proto_config_load(PROTO_FILIFORM_CFG, &fast, error, sizeof error));
+        assert(fast.section_count == 2);
+        assert(fast.sections[0].formula == PROTO_LIGHTNING);
+        assert(fast.sections[1].formula == PROTO_SPIRAL);
+        for (int side = 0; side < 2; ++side) {
+            const ProtoSection *s = &fast.sections[side];
+            assert(s->animated && s->loop && s->transition_count == 4);
+            assert(s->repeat_visible && fabsf(s->cycles - 4.0f) < 0.0001f);
+            assert(fabsf(s->gap_pixels - 2.0f) < 0.0001f);
+            for (int t = 0; t < 4; ++t) {
+                float expected = side == 0 ? 7.843f : 11.765f;
+                assert(fabsf(s->transitions[t].morph_duration - expected) < 0.001f);
+                assert(fabsf(s->transitions[t].duration - 0.353f) < 0.001f);
+            }
+        }
+        assert(fabsf(fast.sections[0].transitions[0].morph_duration * 1.5f -
+                     fast.sections[1].transitions[0].morph_duration) < 0.002f);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }
