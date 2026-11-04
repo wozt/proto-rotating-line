@@ -1,0 +1,29 @@
+{
+  "section_count": 4,
+  "rotation_speed": 10.0,
+  "line_width": 1.0,
+  "show_divider": true,
+  "colors": {
+    "violet": "#8737CD",
+    "cyan": "#19DBE8",
+    "divider": "#F8F8FD"
+  },
+  "sections": [
+    {"formula": "lightning", "amplitude": 15, "cycles": 3, "phase_speed": 0.10},
+    {"formula": "sine", "amplitude": 14, "cycles": 2, "phase_speed": 0.16},
+    {"formula": "fractal", "amplitude": 14, "cycles": 2, "phase_speed": 0.12},
+    {"formula": "straight", "amplitude": 0, "cycles": 1, "phase_speed": 0},
+    {"formula": "tri(cycles*u + speed*t)", "amplitude": 13, "cycles": 3, "phase_speed": -0.10},
+    {"formula": "sin(2*pi*(cycles*u+speed*t))", "amplitude": 14, "cycles": 2, "phase_speed": 0.20},
+    {"formula": "sin(2*pi*cycles*u)+0.4*sin(8*pi*cycles*u+2*t)", "amplitude": 12, "cycles": 2, "phase_speed": 0.14},
+    {"formula": "straight", "amplitude": 0, "cycles": 1, "phase_speed": 0},
+    {"formula": "lightning", "amplitude": 15, "cycles": 3, "phase_speed": 0.10},
+    {"formula": "sine", "amplitude": 14, "cycles": 2, "phase_speed": 0.16},
+    {"formula": "fractal", "amplitude": 14, "cycles": 2, "phase_speed": 0.12},
+    {"formula": "straight", "amplitude": 0, "cycles": 1, "phase_speed": 0},
+    {"formula": "lightning", "amplitude": 15, "cycles": 3, "phase_speed": 0.10},
+    {"formula": "sine", "amplitude": 14, "cycles": 2, "phase_speed": 0.16},
+    {"formula": "fractal", "amplitude": 14, "cycles": 2, "phase_speed": 0.12},
+    {"formula": "straight", "amplitude": 0, "cycles": 1, "phase_speed": 0}
+  ]
+}

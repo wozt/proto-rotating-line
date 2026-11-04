@@ -5,9 +5,9 @@
 #include "curve.h"
 #include <stddef.h>
 
-/* Text format: sections, rotation_speed, line_width, section0..7.
- * Section values: formula, amplitude, cycles, phase_speed. */
+/* Strict JSON settings: see docs/FORMULAS.md. On failure, config is unchanged. */
 bool proto_config_load(const char *path, ProtoConfig *config, char *error, size_t size);
+/* Atomic JSON file replacement through a sibling .tmp file. */
 bool proto_config_save(const char *path, const ProtoConfig *config, char *error, size_t size);
 
 #endif

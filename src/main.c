@@ -12,7 +12,8 @@
 #include <string.h>
 
 static void usage(const char *program) {
-    fprintf(stderr, "Usage: %s [--config FILE] [--sections 2|4|8] [--speed DEG_PER_SEC]\n", program);
+    fprintf(stderr, "Usage: %s [--config FILE.json] [--sections 1|2|4|8|16] "
+                    "[--speed DEG_PER_SEC]\n", program);
 }
 
 static bool parse_float(const char *arg, float *out) {
@@ -24,11 +25,11 @@ static bool parse_float(const char *arg, float *out) {
 }
 
 static bool parse_options(int argc, char **argv, ProtoConfig *config, const char **path) {
-    /* Load the config first regardless of CLI option order; CLI overrides it. */
-    *path = "config/prototype.cfg";
+    /* Load JSON first regardless of CLI option order; flags override JSON. */
+    *path = "config/prototype.json";
     bool explicit_config = false;
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
+        if (!strcmp(argv[i], "--config") && i + 1 < argc) {
             *path = argv[++i];
             explicit_config = true;
         }
@@ -49,8 +50,8 @@ static bool parse_options(int argc, char **argv, ProtoConfig *config, const char
         if (!strcmp(argv[i], "--config") && i + 1 < argc) ++i;
         else if (!strcmp(argv[i], "--sections") && i + 1 < argc) {
             float value;
-            if (!parse_float(argv[++i], &value) ||
-                !(value == 2.0f || value == 4.0f || value == 8.0f)) return false;
+            if (!parse_float(argv[++i], &value) || !proto_valid_section_count((int)value) ||
+                value != (float)(int)value) return false;
             config->section_count = (int)value;
         } else if (!strcmp(argv[i], "--speed") && i + 1 < argc) {
             if (!parse_float(argv[++i], &config->rotation_speed) ||
@@ -62,27 +63,25 @@ static bool parse_options(int argc, char **argv, ProtoConfig *config, const char
 
 static void update_title(SDL_Window *window, const ProtoConfig *config,
                          const ProtoAnimation *animation, int selected) {
-    char title[256];
+    char title[320];
     snprintf(title, sizeof title,
-             "Rotating Line | %d sections | %.1f deg/s | section %d: %s (%.0fpx) | "
-             "Tab section, F formula, 2/4/8 count, +/- speed, Up/Down amplitude, "
-             "Space pause, S save",
+             "Rotating Line | %d sections | %.1f deg/s | section %d: %s | "
+             "Tab select, F formula, 1/2/4/8/0 count, L line, R reload JSON, "
+             "+/- speed, Up/Down amplitude, Space pause, S save",
              config->section_count, config->rotation_speed, selected + 1,
-             proto_formula_name(config->sections[selected].formula),
-             config->sections[selected].amplitude);
+             proto_formula_name(config->sections[selected].formula));
     if (animation->paused) strncat(title, " | PAUSED", sizeof title - strlen(title) - 1);
     SDL_SetWindowTitle(window, title);
 }
 
 static void draw(const ProtoConfig *config, const ProtoFrame *frame, unsigned char *pixels) {
-    const unsigned char violet[4] = {135, 55, 205, 255};
-    const unsigned char cyan[4] = {25, 219, 232, 255};
-    const unsigned char divider[4] = {248, 248, 253, 255};
     for (int y = 0; y < PROTO_HEIGHT; ++y) {
         for (int x = 0; x < PROTO_WIDTH; ++x) {
             float signed_distance = proto_signed_side(frame, x + 0.5f, y + 0.5f);
-            const unsigned char *color = fabsf(signed_distance) <= config->line_width * 0.5f
-                                         ? divider : signed_distance < 0.0f ? violet : cyan;
+            const unsigned char *color = config->show_divider && config->line_width > 0.0f &&
+                fabsf(signed_distance) <= config->line_width * 0.5f
+                ? config->divider_color
+                : signed_distance < 0.0f ? config->violet : config->cyan;
             memcpy(pixels + ((size_t)y * PROTO_WIDTH + x) * 4, color, 4);
         }
     }
@@ -95,13 +94,17 @@ static void key_down(const SDL_KeyboardEvent *key, ProtoConfig *config,
     case SDLK_TAB:
         *selected = (*selected + 1) % config->section_count;
         break;
-    case SDLK_2: case SDLK_4: case SDLK_8:
-        config->section_count = key->key == SDLK_2 ? 2 : key->key == SDLK_4 ? 4 : 8;
+    case SDLK_1: case SDLK_2: case SDLK_4: case SDLK_8: case SDLK_0:
+        config->section_count = key->key == SDLK_1 ? 1 : key->key == SDLK_2 ? 2 :
+                                key->key == SDLK_4 ? 4 : key->key == SDLK_8 ? 8 : 16;
         if (*selected >= config->section_count) *selected = config->section_count - 1;
         break;
     case SDLK_F:
         proto_animation_change_formula(animation, config, *selected,
-            (ProtoFormula)((section->formula + 1) % PROTO_FORMULA_COUNT));
+            (ProtoFormula)((section->formula + 1) % PROTO_CUSTOM));
+        break;
+    case SDLK_L:
+        config->show_divider = !config->show_divider;
         break;
     case SDLK_UP:
         if (section->amplitude < 48.0f) section->amplitude += 1.0f;
@@ -118,6 +121,22 @@ static void key_down(const SDL_KeyboardEvent *key, ProtoConfig *config,
     case SDLK_SPACE:
         animation->paused = !animation->paused;
         break;
+    case SDLK_R: {
+        char error[256];
+        ProtoConfig reloaded = *config;
+        if (proto_config_load(config_path, &reloaded, error, sizeof error)) {
+            float time = animation->time, rotation = animation->rotation_degrees;
+            bool paused = animation->paused;
+            *config = reloaded;
+            proto_animation_init(animation, config);
+            animation->time = time;
+            animation->rotation_degrees = rotation;
+            animation->paused = paused;
+            if (*selected >= config->section_count) *selected = config->section_count - 1;
+            fprintf(stdout, "Reloaded %s\n", config_path);
+        } else fprintf(stderr, "%s\n", error);
+        break;
+    }
     case SDLK_S: {
         char error[256];
         if (proto_config_save(config_path, config, error, sizeof error))
@@ -185,7 +204,7 @@ int main(int argc, char **argv) {
         SDL_RenderClear(renderer);
         SDL_RenderTexture(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
-        SDL_Delay(8); /* Let SDL pace the window without busy-looping. */
+        SDL_Delay(8);
     }
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);

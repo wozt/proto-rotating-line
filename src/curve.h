@@ -6,28 +6,35 @@
 
 #define PROTO_WIDTH 240
 #define PROTO_HEIGHT 160
-#define PROTO_MAX_SECTIONS 8
+#define PROTO_MAX_SECTIONS 16
 #define PROTO_PROFILE_SAMPLES 2049
+#define PROTO_EXPRESSION_LENGTH 160
 
 typedef enum {
     PROTO_STRAIGHT,
     PROTO_SINE,
     PROTO_LIGHTNING,
     PROTO_FRACTAL,
+    PROTO_CUSTOM,
     PROTO_FORMULA_COUNT
 } ProtoFormula;
 
 typedef struct {
     ProtoFormula formula;
-    float amplitude;       /* Pixels, measured perpendicular to the split. */
-    float cycles;          /* Oscillations within this section. */
-    float phase_speed;     /* Cycles per second; may be negative. */
+    float amplitude;     /* Pixels perpendicular to the original divider. */
+    float cycles;        /* Repetitions within one section. */
+    float phase_speed;   /* Cycles per second, signed. */
+    char expression[PROTO_EXPRESSION_LENGTH]; /* For formula = custom. */
 } ProtoSection;
 
 typedef struct {
-    int section_count;    /* 2, 4 or 8. */
-    float rotation_speed; /* Degrees per second, clockwise. */
-    float line_width;     /* Full divider width in logical pixels. */
+    int section_count;       /* 1, 2, 4, 8 or 16. */
+    float rotation_speed;    /* Clockwise degrees per second. */
+    float line_width;        /* Logical pixels, 0..4. */
+    bool show_divider;
+    unsigned char violet[4]; /* RGBA. */
+    unsigned char cyan[4];
+    unsigned char divider_color[4];
     ProtoSection sections[PROTO_MAX_SECTIONS];
 } ProtoConfig;
 
@@ -35,8 +42,8 @@ typedef struct {
     float time;
     float rotation_degrees;
     bool paused;
-    ProtoFormula previous[PROTO_MAX_SECTIONS];
-    float morph[PROTO_MAX_SECTIONS]; /* 0 = old formula; 1 = new formula. */
+    ProtoSection previous[PROTO_MAX_SECTIONS];
+    float morph[PROTO_MAX_SECTIONS];
 } ProtoAnimation;
 
 typedef struct {
@@ -44,6 +51,7 @@ typedef struct {
     float offsets[PROTO_PROFILE_SAMPLES];
 } ProtoFrame;
 
+bool proto_valid_section_count(int count);
 const char *proto_formula_name(ProtoFormula formula);
 bool proto_parse_formula(const char *name, ProtoFormula *out);
 void proto_config_defaults(ProtoConfig *config);
@@ -54,6 +62,6 @@ void proto_animation_change_formula(ProtoAnimation *animation, ProtoConfig *conf
 void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation,
                       ProtoFrame *frame);
 float proto_signed_side(const ProtoFrame *frame, float x, float y);
-/* < 0: violet; > 0: cyan. The sign is independent of line width. */
+/* Negative: violet; positive: cyan. Independent of line width. */
 
 #endif
