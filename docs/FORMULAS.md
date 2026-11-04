@@ -372,3 +372,28 @@ spiral/escargot folds back on itself; that requires a later **parametric
 curve with region classification**, not a graph expression that only controls
 normal displacement. For spirals, use the transition system or wait for the
 parametric curve implementation (planned for a future update).
+
+## Eight repeated tapered curls: slow two-turn cycle
+
+Use `config/prototype_lizard_8x_slow.json` with `--config` to see two independent
+mathematically animated half-lines. Both loops take roughly **72 seconds**,
+while the divider makes a complete rotation in **36 seconds** (10 deg/s).
+
+- First half: `straight -> lightning -> triangle -> straight`. `lightning`
+  is a regular angular wave with finer details at 3x and 9x frequency.
+  `triangle` is the same motif reduced to 38% of its amplitude.
+- Second half: `straight -> sine -> spiral -> sine -> straight`. The spiral
+  has two coiling arms meeting at a sharp zero-radius tip, and its curl
+  reduces continuously as the morph progresses. The form is parametric,
+  not just a sine wave labelled "spiral".
+- `cycles: 8` creates 8 motifs on each visible half-line. `repeat_visible`
+  adapts spacing to the projection of the rotating 240x160 viewport
+  (only when section_count=2). `gap_pixels: 2` inserts straight 2-pixel
+  gaps between the compact motifs. The gap may be 0..5 pixels.
+- In `transitions`, `duration` is a hold time before morphing starts.
+  `morph_duration` is the actual time to transform to the target shape,
+  in seconds, 0.1..60 (default 0.55 for older JSON configurations).
+
+The profile is sampled at 2049 points and clipped to 240x160 pixels.
+Very tight curls can become pixelated; no external images are involved.
+This is a continuous open two-sided divider, not a standalone closed snail.

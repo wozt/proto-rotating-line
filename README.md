@@ -73,3 +73,9 @@ two colours all the way across the frame.
 
 The `duration` in JSON is the wait before triggering the given transition;
 actual morphing lasts 0.55 seconds. Use `R` in SDL to load changes.
+
+## Eight compact curls and slow morphing
+
+Use `./build/proto_rotating_line --config config/prototype_lizard_8x_slow.json`
+for the 72-second two-half demo with eight small motifs per half-line and
+2-pixel flat gaps. See [docs/FORMULAS.md](docs/FORMULAS.md) for timing.

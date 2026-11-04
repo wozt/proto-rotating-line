@@ -1,0 +1,33 @@
+{
+  "section_count": 2,
+  "rotation_speed": 10.0,
+  "line_width": 1.0,
+  "show_divider": true,
+  "colors": {
+    "violet": "#8737CD",
+    "cyan": "#19DBE8",
+    "divider": "#FFFFFF"
+  },
+  "sections": [
+    {
+      "formula": "spatial_lightning",
+      "amplitude": 7.5,
+      "cycles": 4,
+      "phase_speed": 0.0555555556,
+      "repeat_visible": true,
+      "gap_pixels": 0.35,
+      "animated": false,
+      "loop": true
+    },
+    {
+      "formula": "spatial_wave",
+      "amplitude": 6.2,
+      "cycles": 4,
+      "phase_speed": 0.0555555556,
+      "repeat_visible": true,
+      "gap_pixels": 0.35,
+      "animated": false,
+      "loop": true
+    }
+  ]
+}

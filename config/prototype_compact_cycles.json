@@ -1,0 +1,152 @@
+{
+  "section_count": 2,
+  "rotation_speed": 10.0,
+  "line_width": 1.0,
+  "show_divider": true,
+  "colors": {
+    "violet": "#8737CD",
+    "cyan": "#19DBE8",
+    "divider": "#FFFFFF"
+  },
+  "sections": [
+    {
+      "formula": "straight",
+      "amplitude": 10,
+      "cycles": 8,
+      "phase_speed": 0.0,
+      "animated": true,
+      "loop": true,
+      "transitions": [
+        {
+          "formula": "lightning",
+          "duration": 0.9,
+          "easing": "cubic_in_out"
+        },
+        {
+          "formula": "expr:tri(cycles*u)",
+          "duration": 0.8,
+          "easing": "cubic_in_out"
+        },
+        {
+          "formula": "straight",
+          "duration": 2.2,
+          "easing": "cubic_in_out"
+        }
+      ]
+    },
+    {
+      "formula": "straight",
+      "amplitude": 11,
+      "cycles": 8,
+      "phase_speed": 0.0,
+      "animated": true,
+      "loop": true,
+      "transitions": [
+        {
+          "formula": "sine",
+          "duration": 0.45,
+          "easing": "cubic_in_out"
+        },
+        {
+          "formula": "spiral",
+          "duration": 1.8,
+          "easing": "cubic_in_out"
+        },
+        {
+          "formula": "sine",
+          "duration": 0.55,
+          "easing": "cubic_in_out"
+        },
+        {
+          "formula": "straight",
+          "duration": 2.4,
+          "easing": "cubic_in_out"
+        }
+      ]
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    },
+    {
+      "formula": "straight",
+      "amplitude": 0,
+      "cycles": 1,
+      "phase_speed": 0
+    }
+  ]
+}
