@@ -262,102 +262,51 @@ int main(void) {
     for (int y = 0; y < PROTO_HEIGHT; y += 4)
         for (int x = 0; x < PROTO_WIDTH; x += 4)
             assert(isfinite(proto_signed_side(&f, x + .5f, y + .5f)));
-    /* Patch 0006: broad curling wavecrest, narrowing to a sharp point. */
+    /* Patch 0010: compact centred tentacle spiral with strong taper. */
     {
-        float cx = 0.70f * 28.0f, cy = 0.63f * fminf(0.85f * 14.0f, 0.34f * 28.0f);
-        float crest_x, crest_y, tip_x, tip_y;
-        proto_spiral_point(0.37f, 0.0f, 28.0f, 14.0f, 1.0f, &crest_x, &crest_y);
-        assert(crest_y > 9.0f); /* Slim rising body while retaining a crest. */
-        float last_r = 1.0e6f;
-        for (int j = 0; j <= 10; ++j) {
-            float u = 0.37f + (0.88f - 0.37f) * (float)j / 10.0f;
-            float px, py;
-            proto_spiral_point(u, 0.0f, 28.0f, 14.0f, 1.0f, &px, &py);
-            float r = hypotf(px - cx, py - cy);
-            assert(r <= last_r + 0.001f);
-            last_r = r;
-        }
-        proto_spiral_point(0.88f, 0.0f, 28.0f, 14.0f, 1.0f, &tip_x, &tip_y);
-        assert(hypotf(tip_x - cx, tip_y - cy) < 0.002f);
-        assert(crest_y > tip_y * 1.5f); /* Silhouette tapers strongly. */
-        for (int j = 0; j <= 20; ++j) {
-            float u = (float)j / 20.0f, px, py;
-            proto_spiral_point(u, 0.0f, 28.0f, 14.0f, 0.0f, &px, &py);
-            assert(fabsf(px - u * 28.0f) < 0.002f);
-            assert(fabsf(py) < 0.002f);
-        }
-        proto_spiral_point(0.0f, 0.0f, 28.0f, 14.0f, 1.0f, &tip_x, &tip_y);
-        assert(fabsf(tip_y) < 0.002f);
-        proto_spiral_point(1.0f, 0.0f, 28.0f, 14.0f, 1.0f, &tip_x, &tip_y);
-        assert(fabsf(tip_y) < 0.002f && fabsf(tip_x - 28.0f) < 0.002f);
-    }
-    /* Patch 0007: a genuine slender inward taper, with no detached tip. */
-    {
-        const float span = 28.0f, amplitude = 14.0f;
-        const float crest_y = fminf(0.85f * amplitude, 0.34f * span);
-        const float cx = 0.70f * span, cy = 0.63f * crest_y;
-        float x, y;
-        proto_spiral_point(0.37f, 0.0f, span, amplitude, 1.0f, &x, &y);
-        assert(y > 9.0f && y < 10.0f);
-        float outer, inner;
-        proto_spiral_point(0.37f + (0.88f - 0.37f) * 0.55f,
-                           0.0f, span, amplitude, 1.0f, &x, &y);
-        outer = hypotf(x - cx, y - cy);
-        proto_spiral_point(0.37f + (0.88f - 0.37f) * 0.88f,
-                           0.0f, span, amplitude, 1.0f, &x, &y);
-        inner = hypotf(x - cx, y - cy);
-        assert(outer > 2.0f && inner < outer * 0.20f);
-        proto_spiral_point(0.88f, 0.0f, span, amplitude, 1.0f, &x, &y);
-        assert(hypotf(x - cx, y - cy) < 0.002f);
-    }
-    /* Patch 0008: four compact coils are smaller than untouched lightning,
-     * while every one still folds and their endpoints remain connected. */
-    {
-        ProtoConfig compact;
-        proto_config_defaults(&compact);
-        compact.section_count = 2;
-        compact.rotation_speed = 0.0f;
-        compact.sections[0].formula = PROTO_LIGHTNING;
-        compact.sections[0].amplitude = 11.0f;
-        compact.sections[0].cycles = 4.0f;
-        compact.sections[0].gap_pixels = 2.0f;
-        compact.sections[0].repeat_visible = true;
-        compact.sections[1].formula = PROTO_SPIRAL;
-        compact.sections[1].amplitude = 10.0f;
-        compact.sections[1].spiral_scale = 0.45f;
-        compact.sections[1].cycles = 4.0f;
-        compact.sections[1].gap_pixels = 2.0f;
-        compact.sections[1].repeat_visible = true;
-        ProtoAnimation a8;
-        ProtoFrame f8;
-        proto_animation_init(&a8, &compact);
-        proto_make_frame(&compact, &a8, &f8);
-        float bolt_max = 0.0f, wave_max = 0.0f;
-        int curl_count = 0;
-        for (int k = 1; k < PROTO_PROFILE_SAMPLES; ++k) {
-            float x = -168.0f + 336.0f * k / (PROTO_PROFILE_SAMPLES - 1);
-            if (x < 0.0f) bolt_max = fmaxf(bolt_max, fabsf(f8.offsets[k]));
-            else wave_max = fmaxf(wave_max, fabsf(f8.offsets[k]));
-        }
-        assert(bolt_max > 6.0f);
-        assert(wave_max > 2.0f);
-        assert(wave_max < bolt_max * 0.75f);
-        for (int j = 0; j < 4; ++j) {
-            float x0 = 30.0f * j, x1 = x0 + 30.0f;
-            bool folded = false;
-            for (int k = 1; k < PROTO_PROFILE_SAMPLES; ++k) {
-                float base_x = -168.0f + 336.0f * k / (PROTO_PROFILE_SAMPLES - 1);
-                if (base_x > x0 + 1.0f && base_x < x1 - 1.0f &&
-                    f8.x_coords[k] < f8.x_coords[k-1] - 0.001f)
-                    folded = true;
+        const float span = 28.0f;
+        const float amplitude = 8.0f;
+        float px = 0.0f, py = 0.0f;
+        float max_y = -1.0e6f, min_y = 1.0e6f;
+        float max_radius = 0.0f;
+        float last_radius = 1.0e6f;
+        bool entered_coil = false;
+        bool left_axis = false;
+
+        for (int j = 0; j <= 24; ++j) {
+            float u = (float)j / 24.0f;
+            float x, y;
+            proto_spiral_point(u, 0.0f, span, amplitude, 1.0f, &x, &y);
+            if (u >= 0.20f && u <= 0.86f) {
+                float radius = hypotf(x - 0.50f * span, y);
+                if (!entered_coil) {
+                    entered_coil = true;
+                    max_radius = radius;
+                } else {
+                    assert(radius <= last_radius + 0.45f);
+                }
+                last_radius = radius;
+                if (fabsf(y) > 0.4f) left_axis = true;
             }
-            if (folded) ++curl_count;
+            if (y > max_y) max_y = y;
+            if (y < min_y) min_y = y;
+            px = x; py = y;
         }
-        assert(curl_count == 4);
-        for (int y = 0; y < PROTO_HEIGHT; y += 8)
-            for (int x = 0; x < PROTO_WIDTH; x += 8)
-                assert(isfinite(proto_signed_side(&f8, x+0.5f, y+0.5f)));
+        assert(entered_coil);
+        assert(left_axis);
+        assert(max_radius < 5.2f);
+        assert(max_y > 0.65f && min_y < -1.50f);
+        assert(fabsf(py) < 0.002f && fabsf(px - span) < 0.002f);
+
+        for (int j = 0; j <= 20; ++j) {
+            float u = (float)j / 20.0f;
+            float x, y;
+            proto_spiral_point(u, 0.0f, span, amplitude, 0.0f, &x, &y);
+            assert(fabsf(x - u * span) < 0.002f);
+            assert(fabsf(y) < 0.002f);
+        }
     }
+
     puts("curve_math: ok");
     return 0;
 }

@@ -18,43 +18,38 @@ void proto_spiral_point(float u, float cell_start, float cell_span,
                         float amplitude, float curl, float *x, float *y) {
     curl = fmaxf(0.0f, fminf(1.0f, curl));
     u = fmaxf(0.0f, fminf(1.0f, u));
-    const float crest_end = 0.37f;
-    const float coil_end = 0.88f;
-    const float crest_x = 0.29f * cell_span;
-    const float crest_y = fminf(0.85f * amplitude, 0.34f * cell_span);
-    const float coil_x = 0.70f * cell_span;
-    const float coil_y = 0.63f * crest_y;
-    float coiled_x, coiled_y;
 
-    if (u <= crest_end) {
-        /* Gradually rising and narrow wave stalk. A cubic crest gives the
-         * Wind Waker-inspired lip a slender, tapering silhouette. */
-        const float v = u / crest_end;
-        coiled_x = crest_x * v;
-        coiled_y = crest_y * v * v * v * (4.0f - 3.0f * v);
-    } else if (u < coil_end) {
-        /* The lip curls inward while radius falls to zero at its tip;
-         * this is a tapering single arm, not a pair of constant-width arcs. */
-        const float v = (u - crest_end) / (coil_end - crest_end);
-        const float dx = crest_x - coil_x;
-        const float dy = crest_y - coil_y;
-        /* Preserve the outside curl and taper the inner tongue to a hairline.
-         * Smoothstep avoids a kink in the radius derivative at v=0.60. */
-        const float q = fmaxf(0.0f, fminf(1.0f, (v - 0.60f) / 0.40f));
-        const float tip_taper = 1.0f - 0.65f * q * q * (3.0f - 2.0f * q);
-        const float radius = hypotf(dx, dy) * powf(1.0f - v, 1.25f) * tip_taper;
-        const float theta = atan2f(dy, dx) - 2.75f * PI * v;
-        coiled_x = coil_x + radius * cosf(theta);
-        coiled_y = coil_y + radius * sinf(theta);
-    } else {
-        /* A short descent to the baseline leaves the next cell connected. */
-        const float v = (u - coil_end) / (1.0f - coil_end);
-        coiled_x = coil_x + (cell_span - coil_x) * v;
-        coiled_y = coil_y * (1.0f - v);
-    }
+    const float lead_end = 0.20f;
+    const float coil_end = 0.86f;
     const float straight_x = u * cell_span;
-    *x = cell_start + straight_x + curl * (coiled_x - straight_x);
-    *y = curl * coiled_y;
+    const float center_x = 0.50f * cell_span;
+    const float center_y = 0.0f;
+    const float outer_radius = fminf(0.60f * amplitude, 0.15f * cell_span);
+    const float tail_start_x = center_x; /* Tangent-continuous join at curl centre. */
+    float shape_x = straight_x;
+    float shape_y = 0.0f;
+
+    if (u <= lead_end) {
+        const float v = u / lead_end;
+        const float entry_x = center_x - outer_radius;
+        shape_x = entry_x * v;
+        shape_y = 0.0f;
+    } else if (u < coil_end) {
+        const float v = (u - lead_end) / (coil_end - lead_end);
+        const float eased = v * v * (3.0f - 2.0f * v);
+        const float turns = 1.65f;
+        const float theta = PI + 2.0f * PI * turns * eased;
+        const float radius = outer_radius * powf(1.0f - eased, 2.65f);
+        shape_x = center_x + radius * cosf(theta);
+        shape_y = center_y + radius * sinf(theta);
+    } else {
+        const float v = (u - coil_end) / (1.0f - coil_end);
+        shape_x = tail_start_x + (cell_span - tail_start_x) * v;
+        shape_y = 0.0f;
+    }
+
+    *x = cell_start + straight_x + curl * (shape_x - straight_x);
+    *y = curl * shape_y;
 }
 
 /* For the entire rotated polyline, intersect a vertical ray with the open
