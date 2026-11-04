@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -263,12 +263,70 @@ static float lightning_unit(float p) {
            0.04f * triangle_unit(9.0f * p);
 }
 
+/* Spatial gradient: one breathing state, four simultaneous complexities.
+ * Unlike legacy transitions, the curve never switches its formula per step.
+ * The entire half-line goes flat -> sine/triangle -> partial curl/zigzag ->
+ * fully developed tentacle/lightning -> ... -> flat, continuously. */
+static void spatial_gradient_point(const ProtoSection *s, float baseline,
+                                   float u, float start, float span,
+                                   float time, float *x, float *y) {
+    *x = baseline;
+    *y = 0.0f;
+    if (u < 0.0f || u > 1.0f) return;
+    int count = (int)lroundf(s->cycles);
+    if (count < 1) count = 1;
+    if (count > 16) count = 16;
+    const float cell = span / count;
+    const float gap = fminf(fmaxf(0.0f, s->gap_pixels), 0.65f * cell);
+    int index = (int)(u * count);
+    if (index >= count) index = count - 1;
+    const float local = u * span - index * cell;
+    if (local <= 0.5f * gap || local >= cell - 0.5f * gap) return;
+    const float length = cell - gap;
+    const float p = (local - 0.5f * gap) / length;
+    const float cell_start = start + index * cell + 0.5f * gap;
+
+    /* All portions use one clock: t=0 flat, t=9 expanded, t=18 flat.
+     * A sine-square envelope avoids velocity discontinuities at both ends. */
+    const float phase = 2.0f * PROTO_PI * time * s->phase_speed;
+    const float breath = 0.5f - 0.5f * cosf(phase);
+    const float grade = count == 1 ? 1.0f : (float)index / (float)(count - 1);
+    const float edge = smoothstep(fminf(10.0f * p, 10.0f * (1.0f - p)));
+    const float development = smoothstep((breath - 0.16f) / 0.84f);
+
+    if (s->formula == PROTO_SPATIAL_WAVE) {
+        /* Portion 1 is always a sinus. The subsequent ones progressively
+         * roll into a centred, fine-tipped spiral on the same frame. */
+        const float simple = 0.45f * s->amplitude * sinf(2.0f * PROTO_PI * p) * edge;
+        float coil_x, coil_y;
+        proto_tentacle_gradient_point(p, cell_start, length, s->amplitude,
+                                      &coil_x, &coil_y);
+        const float mix = grade * development;
+        *x = baseline + breath * mix * (coil_x - baseline);
+        *y = breath * ((1.0f - mix) * simple + mix * coil_y);
+    } else {
+        /* Identical spatial progression for lightning. Simple triangular
+         * wave at cell 1, increasingly angular until cell 4 is jagged. */
+        const float triangle = 0.45f * (1.0f - fabsf(2.0f * p - 1.0f));
+        const float jagged = lightning_unit(p);
+        const float fast = fminf(1.0f, breath * 1.5f);
+        const float mix = grade * smoothstep((fast - 0.16f) / 0.84f);
+        *y = s->amplitude * fast *
+             ((1.0f - mix) * triangle + mix * jagged) * edge;
+    }
+}
+
 static void shape_point(const ProtoSection *s, float baseline, float u,
                         float start, float span, float t, float curl,
                         float *x, float *y) {
     *x = baseline;
     *y = 0.0f;
     if (u < 0.0f || u > 1.0f) return;
+    if (s->formula == PROTO_SPATIAL_WAVE ||
+        s->formula == PROTO_SPATIAL_LIGHTNING) {
+        spatial_gradient_point(s, baseline, u, start, span, t, x, y);
+        return;
+    }
     bool repeated = s->formula == PROTO_SPIRAL ||
         ((s->repeat_visible || s->gap_pixels > 0.0f) &&
          (s->formula == PROTO_SINE || s->formula == PROTO_LIGHTNING ||
@@ -384,6 +442,11 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
             (previous->formula == PROTO_SPIRAL && blend < 1.0f))
             frame->parametric = true;
     }
+    /* Curled spatial motifs can double back along x; always use the
+     * parametric crossing classifier for the wave half-line. */
+    for (int side = 0; side < config->section_count; ++side)
+        if (config->sections[side].formula == PROTO_SPATIAL_WAVE)
+            frame->parametric = true;
     if (frame->parametric) proto_parametric_prepare(frame);
 }
 

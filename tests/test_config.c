@@ -128,6 +128,31 @@ int main(void) {
                      fast.sections[1].transitions[0].morph_duration) < 0.002f);
     }
 #endif
+    /* Patch 0011: the JSON loads spatial progression without transition lists. */
+#ifdef PROTO_SPATIAL_CFG
+    {
+        ProtoConfig graded, again;
+        proto_config_defaults(&graded);
+        assert(proto_config_load(PROTO_SPATIAL_CFG, &graded, error, sizeof error));
+        assert(graded.section_count == 2);
+        assert(graded.sections[0].formula == PROTO_SPATIAL_LIGHTNING);
+        assert(graded.sections[1].formula == PROTO_SPATIAL_WAVE);
+        for (int side = 0; side < 2; ++side) {
+            assert(graded.sections[side].transition_count == 0);
+            assert(!graded.sections[side].animated);
+            assert(graded.sections[side].repeat_visible);
+            assert(fabsf(graded.sections[side].cycles - 4.0f) < 0.0001f);
+            assert(fabsf(graded.sections[side].gap_pixels - 0.5f) < 0.0001f);
+            assert(fabsf(graded.sections[side].phase_speed - (1.0f/18.0f)) < 0.0001f);
+        }
+        assert(proto_config_save(path, &graded, error, sizeof error));
+        proto_config_defaults(&again);
+        assert(proto_config_load(path, &again, error, sizeof error));
+        assert(again.sections[0].formula == PROTO_SPATIAL_LIGHTNING);
+        assert(again.sections[1].formula == PROTO_SPATIAL_WAVE);
+        remove(path);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

@@ -307,6 +307,75 @@ int main(void) {
         }
     }
 
+    /* Patch 0011: all four portions are distinct, on/off together. */
+    {
+        ProtoConfig spatial;
+        ProtoAnimation phase;
+        ProtoFrame begin, peak, midway, returning, finish;
+        proto_config_defaults(&spatial);
+        assert(proto_parse_formula("spatial_wave", &formula));
+        assert(formula == PROTO_SPATIAL_WAVE);
+        assert(proto_parse_formula("spatial_lightning", &formula));
+        assert(formula == PROTO_SPATIAL_LIGHTNING);
+        spatial.section_count = 2;
+        spatial.rotation_speed = 0.0f;
+        spatial.sections[0].formula = PROTO_SPATIAL_LIGHTNING;
+        spatial.sections[1].formula = PROTO_SPATIAL_WAVE;
+        for (int side = 0; side < 2; ++side) {
+            ProtoSection *s = &spatial.sections[side];
+            s->amplitude = side == 0 ? 11.0f : 8.0f;
+            s->cycles = 4.0f;
+            s->repeat_visible = true;
+            s->gap_pixels = 0.5f;
+            s->phase_speed = 1.0f / 18.0f;
+            s->animated = false;
+            s->transition_count = 0;
+        }
+        proto_animation_init(&phase, &spatial);
+        phase.time = 0.0f;
+        proto_make_frame(&spatial, &phase, &begin);
+        phase.time = 9.0f;
+        proto_make_frame(&spatial, &phase, &peak);
+        phase.time = 4.5f;
+        proto_make_frame(&spatial, &phase, &midway);
+        phase.time = 13.5f;
+        proto_make_frame(&spatial, &phase, &returning);
+        phase.time = 18.0f;
+        proto_make_frame(&spatial, &phase, &finish);
+        assert(peak.parametric);
+        float wave_max[4] = {0}, bolt_max[4] = {0};
+        int wave_folds[4] = {0};
+        const float sample = 336.0f / (PROTO_PROFILE_SAMPLES - 1);
+        for (int k = 1; k < PROTO_PROFILE_SAMPLES; ++k) {
+            float baseline = -168.0f + k * sample;
+            assert(fabsf(begin.offsets[k]) < 0.002f);
+            assert(fabsf(finish.offsets[k]) < 0.002f);
+            assert(fabsf(peak.offsets[k]) < 48.0f);
+            assert(fabsf(midway.offsets[k] - returning.offsets[k]) < 0.002f);
+            assert(fabsf(midway.x_coords[k] - returning.x_coords[k]) < 0.002f);
+            if (baseline >= 0.0f && baseline < 120.0f) {
+                int i = (int)(baseline / 30.0f);
+                if (i > 3) i = 3;
+                wave_max[i] = fmaxf(wave_max[i], fabsf(peak.offsets[k]));
+                if (peak.x_coords[k] + 0.02f < peak.x_coords[k-1])
+                    ++wave_folds[i];
+            } else if (baseline > -120.0f && baseline < 0.0f) {
+                int i = (int)((baseline + 120.0f) / 30.0f);
+                if (i > 3) i = 3;
+                bolt_max[i] = fmaxf(bolt_max[i], fabsf(peak.offsets[k]));
+            }
+        }
+        for (int i = 0; i < 4; ++i) {
+            assert(wave_max[i] > 1.2f);
+            assert(bolt_max[i] > 0.5f);
+        }
+        assert(wave_folds[0] == 0 && wave_folds[3] > 0);
+        assert(bolt_max[3] > bolt_max[0] * 1.3f);
+        for (int y = 1; y < PROTO_HEIGHT; y += 5)
+            for (int x = 1; x < PROTO_WIDTH; x += 7)
+                assert(isfinite(proto_signed_side(&peak, x + .5f, y + .5f)));
+    }
+
     puts("curve_math: ok");
     return 0;
 }

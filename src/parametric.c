@@ -55,6 +55,34 @@ void proto_spiral_point(float u, float cell_start, float cell_span,
 /* For the entire rotated polyline, intersect a vertical ray with the open
  * separator in its local frame. Scan conversion happens once per frame.
  * The even/odd rule handles the folded spiral without flood-fill or art. */
+/* Single-armed tentacle curl, joined to the separator at both endpoints.
+ * The base of the curl is relatively round, its inner tip reaches radius 0,
+ * and its centre remains on the horizontal line. This is NOT the old wave crest. */
+void proto_tentacle_gradient_point(float u, float start, float span,
+                                  float amplitude, float *x, float *y) {
+    u = fmaxf(0.0f, fminf(1.0f, u));
+    const float lead = 0.23f, finish = 0.83f;
+    const float centre = 0.51f * span;
+    const float radius0 = fminf(0.85f * amplitude, 0.235f * span);
+    float px, py;
+    if (u <= lead) {
+        px = (centre - radius0) * (u / lead);
+        py = 0.0f;
+    } else if (u < finish) {
+        float v = (u - lead) / (finish - lead);
+        float theta = PI + 3.55f * PI * v;
+        float radius = radius0 * powf(1.0f - v, 1.82f);
+        px = centre + radius * cosf(theta);
+        py = radius * sinf(theta);
+    } else {
+        float v = (u - finish) / (1.0f - finish);
+        px = centre + (span - centre) * v;
+        py = 0.0f;
+    }
+    *x = start + px;
+    *y = py;
+}
+
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES - 1; ++i) {
