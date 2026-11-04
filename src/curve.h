@@ -17,6 +17,10 @@ typedef enum {
     PROTO_SINE,
     PROTO_LIGHTNING,
     PROTO_FRACTAL,
+    PROTO_FOURIER,
+    PROTO_CHIRP,
+    PROTO_TROCHOID,
+    PROTO_HARMONIC_FRACTAL,
     PROTO_CUSTOM,
     PROTO_FORMULA_COUNT
 } ProtoFormula;
@@ -24,6 +28,12 @@ typedef enum {
 typedef enum {
     PROTO_EASE_LINEAR,
     PROTO_EASE_SMOOTHSTEP,
+    PROTO_EASE_QUAD_IN,
+    PROTO_EASE_QUAD_OUT,
+    PROTO_EASE_QUAD_IN_OUT,
+    PROTO_EASE_CUBIC_IN,
+    PROTO_EASE_CUBIC_OUT,
+    PROTO_EASE_CUBIC_IN_OUT,
     PROTO_EASE_COUNT
 } ProtoEasing;
 
@@ -31,6 +41,7 @@ typedef struct {
     ProtoFormula formula;
     float duration;  /* Seconds for this transition */
     ProtoEasing easing;
+    char expression[PROTO_EXPRESSION_LENGTH]; /* For formula = custom in transitions */
 } ProtoTransition;
 
 typedef struct {
@@ -66,6 +77,7 @@ typedef struct {
     int current_transition[PROTO_MAX_SECTIONS];  /* Index in transitions array */
     float transition_time[PROTO_MAX_SECTIONS];   /* Time elapsed in current transition */
     ProtoFormula current_formula[PROTO_MAX_SECTIONS];  /* Current formula for each section */
+    char current_expression[PROTO_MAX_SECTIONS][PROTO_EXPRESSION_LENGTH];  /* For custom formulas in transitions */
 } ProtoAnimation;
 
 typedef struct {

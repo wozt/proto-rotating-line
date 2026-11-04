@@ -31,6 +31,10 @@ int main(void) {
     proto_animation_init(&anim, &cfg);
     ProtoFormula formula;
     assert(proto_parse_formula("lightning", &formula) && formula == PROTO_LIGHTNING);
+    assert(proto_parse_formula("fourier", &formula) && formula == PROTO_FOURIER);
+    assert(proto_parse_formula("chirp", &formula) && formula == PROTO_CHIRP);
+    assert(proto_parse_formula("trochoid", &formula) && formula == PROTO_TROCHOID);
+    assert(proto_parse_formula("harmonic_fractal", &formula) && formula == PROTO_HARMONIC_FRACTAL);
     assert(!proto_parse_formula("spiral", &formula));
     for (int sections = 1; sections <= 16; sections *= 2) {
         assert(proto_valid_section_count(sections));
@@ -98,6 +102,28 @@ int main(void) {
     /* Verify non-animated sections don't have transitions */
     assert(cfg.sections[1].animated == false);
     assert(cfg.sections[1].transition_count == 0);
+    /* Test new formula types produce valid output */
+    cfg.sections[0].formula = PROTO_FOURIER;
+    cfg.sections[0].amplitude = 10.0f;
+    proto_animation_init(&anim, &cfg);
+    check_sides(&cfg, &anim);
+    cfg.sections[0].formula = PROTO_CHIRP;
+    check_sides(&cfg, &anim);
+    cfg.sections[0].formula = PROTO_TROCHOID;
+    check_sides(&cfg, &anim);
+    cfg.sections[0].formula = PROTO_HARMONIC_FRACTAL;
+    check_sides(&cfg, &anim);
+    /* Test custom expression in transition */
+    cfg.sections[0].animated = true;
+    cfg.sections[0].transition_count = 1;
+    cfg.sections[0].transitions[0].formula = PROTO_CUSTOM;
+    strncpy(cfg.sections[0].transitions[0].expression, "sin(2*pi*u)", PROTO_EXPRESSION_LENGTH);
+    cfg.sections[0].transitions[0].expression[PROTO_EXPRESSION_LENGTH - 1] = '\0';
+    cfg.sections[0].formula = PROTO_STRAIGHT;
+    proto_animation_init(&anim, &cfg);
+    assert(anim.current_formula[0] == PROTO_STRAIGHT);
+    /* Verify expression is stored correctly in transition */
+    assert(strcmp(cfg.sections[0].transitions[0].expression, "sin(2*pi*u)") == 0);
     puts("curve_math: ok");
     return 0;
 }

@@ -213,12 +213,19 @@ static bool easing_json(const Json *j, int idx, ProtoEasing *easing) {
     if (!str_token(j, idx, name, sizeof name)) return false;
     if (!strcmp(name, "linear")) { *easing = PROTO_EASE_LINEAR; return true; }
     if (!strcmp(name, "smoothstep")) { *easing = PROTO_EASE_SMOOTHSTEP; return true; }
+    if (!strcmp(name, "quad_in")) { *easing = PROTO_EASE_QUAD_IN; return true; }
+    if (!strcmp(name, "quad_out")) { *easing = PROTO_EASE_QUAD_OUT; return true; }
+    if (!strcmp(name, "quad_in_out")) { *easing = PROTO_EASE_QUAD_IN_OUT; return true; }
+    if (!strcmp(name, "cubic_in")) { *easing = PROTO_EASE_CUBIC_IN; return true; }
+    if (!strcmp(name, "cubic_out")) { *easing = PROTO_EASE_CUBIC_OUT; return true; }
+    if (!strcmp(name, "cubic_in_out")) { *easing = PROTO_EASE_CUBIC_IN_OUT; return true; }
     return false;
 }
 
 static bool transition_json(const Json *j, int idx, ProtoTransition *t) {
     if (idx < 0 || j->tokens[idx].kind != T_OBJECT) return false;
     unsigned seen = 0;
+    t->expression[0] = '\0';  /* Clear expression by default */
     for (int key = idx + 1; key < j->tokens[idx].next;) {
         int value = key + 1;
         unsigned bit = 0;
@@ -226,7 +233,14 @@ static bool transition_json(const Json *j, int idx, ProtoTransition *t) {
             bit = 1;
             char name[PROTO_EXPRESSION_LENGTH];
             if (!str_token(j, value, name, sizeof name)) return false;
-            if (!proto_parse_formula(name, &t->formula)) return false;
+            if (proto_parse_formula(name, &t->formula)) {
+                t->expression[0] = '\0';
+            } else {
+                const char *expr = !strncmp(name, "expr:", 5) ? name + 5 : name;
+                if (!proto_expression_valid(expr)) return false;
+                t->formula = PROTO_CUSTOM;
+                snprintf(t->expression, sizeof t->expression, "%s", expr);
+            }
         } else if (key_is(j, key, "duration")) {
             bit = 2;
             if (!scalar(j, value, &t->duration, 0.1f, 60.0f)) return false;
@@ -416,6 +430,12 @@ static const char *easing_name(ProtoEasing easing) {
     switch (easing) {
         case PROTO_EASE_LINEAR: return "linear";
         case PROTO_EASE_SMOOTHSTEP: return "smoothstep";
+        case PROTO_EASE_QUAD_IN: return "quad_in";
+        case PROTO_EASE_QUAD_OUT: return "quad_out";
+        case PROTO_EASE_QUAD_IN_OUT: return "quad_in_out";
+        case PROTO_EASE_CUBIC_IN: return "cubic_in";
+        case PROTO_EASE_CUBIC_OUT: return "cubic_out";
+        case PROTO_EASE_CUBIC_IN_OUT: return "cubic_in_out";
         default: return "linear";
     }
 }
@@ -465,9 +485,10 @@ bool proto_config_save(const char *path, const ProtoConfig *config, char *error,
                 ok = fprintf(file, ", \"transitions\": [") >= 0;
                 for (int t = 0; ok && t < s->transition_count; ++t) {
                     const ProtoTransition *trans = &s->transitions[t];
-                    ok = fprintf(file, "%s{\"formula\": \"%s\", \"duration\": %.3f, \"easing\": \"%s\"}",
-                                 t == 0 ? "" : ", ",
-                                 proto_formula_name(trans->formula),
+                    const char *name = trans->formula == PROTO_CUSTOM ? trans->expression : proto_formula_name(trans->formula);
+                    ok = fprintf(file, "%s{\"formula\": ", t == 0 ? "" : ", ") >= 0 &&
+                         write_string(file, name) == 0 &&
+                         fprintf(file, ", \"duration\": %.3f, \"easing\": \"%s\"}",
                                  trans->duration,
                                  easing_name(trans->easing)) >= 0;
                 }

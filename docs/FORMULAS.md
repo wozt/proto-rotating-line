@@ -66,7 +66,7 @@ timestep for deterministic animation, synchronized with SDL VSync.
 - `transitions`: Array of transition objects, each specifying:
   - `formula`: Target formula to transition to (preset name only, not custom expressions).
   - `duration`: Seconds to wait at the current formula before triggering the next transition (0.1..60).
-  - `easing`: Transition smoothing function: `"linear"` or `"smoothstep"`.
+  - `easing`: Transition smoothing function: `"linear"`, `"smoothstep"`, `"quad_in"`, `"quad_out"`, `"quad_in_out"`, `"cubic_in"`, `"cubic_out"`, or `"cubic_in_out"`.
 
 The transition timing works as follows:
 1. When `animated` is true and a morph completes, the section waits for `duration` seconds.
@@ -228,25 +228,85 @@ single-valued graph offset from its tangent. True spirals (Archimedean, logarith
 require parametric curves with explicit (x, y) coordinates and robust region
 classification to handle self-intersections. This is planned for a future update.
 
-**Easing functions**: Currently only `linear` and `smoothstep` are implemented.
-Additional easing functions (ease-in, ease-out, cubic, elastic) could be added
-for more varied transition behaviors.
+**Easing functions**: Multiple easing functions are now implemented: `linear`, `smoothstep`,
+`quad_in`, `quad_out`, `quad_in_out`, `cubic_in`, `cubic_out`, and `cubic_in_out`.
+These provide varied transition behaviors from linear to cubic curves.
 
-**Custom expression transitions**: Transitions currently only support preset
-formulas. Supporting custom expressions in transitions would require careful
-validation and handling of expression strings during morphing.
+**Custom expression transitions**: Transitions now support custom expressions using the
+`expr:` prefix. For example: `{"formula": "expr:sin(2*pi*u)+0.5*sin(4*pi*u)"}`. This allows
+transitioning between any valid mathematical expression.
 
 ## Preset formulas
 
-The `formula` string may be `straight`, `sine`, `lightning`, or `fractal`.
-They correspond to these mathematically-defined unit displacements:
+The `formula` string may be `straight`, `sine`, `lightning`, `fractal`, `fourier`,
+`chirp`, `trochoid`, or `harmonic_fractal`. They correspond to these mathematically-defined
+unit displacements:
 
-| Name | Underlying displacement (before envelope/amplitude) |
-| --- | --- |
-| `straight` | `0` |
-| `sine` | `sin(2*pi*(cycles*u + speed*t))` |
-| `lightning` | `2*fract(cycles*u + speed*t)-1` (regular saw teeth) |
-| `fractal` | Four weighted sine harmonics with frequency 1, 2, 4, 8 |
+| Name | Description | Visual effect |
+| --- | --- | --- |
+| `straight` | `0` | Flat line, no displacement |
+| `sine` | `sin(2*pi*(cycles*u + speed*t))` | Regular sine wave |
+| `lightning` | `2*fract(cycles*u + speed*t)-1` | Regular saw teeth (zigzag) |
+| `fractal` | Four weighted sine harmonics (freq 1, 2, 4, 8) | Self-similar detail, organic complexity |
+| `fourier` | Harmonic superposition with different phase speeds | Rich wave, beating patterns |
+| `chirp` | Frequency varies linearly with position | Sine wave with increasing/decreasing frequency |
+| `trochoid` | Cycloid-like curve (rolling circle) | Creates loops and cyclical motion |
+| `harmonic_fractal` | Six harmonics with slower decay | Finer detail, more controlled irregularity |
+
+### Formula details
+
+**Fourier**: Superposition of sine waves with harmonic frequencies (1x, 2x, 3x, 4x) and
+independent phase speeds. Creates complex interference patterns and beating effects.
+
+**Chirp**: A sine wave whose frequency varies linearly across the section. The local
+frequency at position u is f(u) = 1 + 2u, creating a wave that compresses or expands
+across the segment. Useful for creating accelerating or decelerating oscillations.
+
+**Trochoid**: Simulates a point on a rolling circle (cycloid family). Creates loops when
+the point is outside the rolling circle radius. The formula uses the y-component of
+the trochoid equation, giving cyclical motion with rounded peaks.
+
+**Harmonic Fractal**: Similar to the basic fractal but with six harmonics (1x through 6x)
+and slower amplitude decay (0.6x per harmonic). This preserves more high-frequency detail
+while maintaining self-similarity, creating more intricate wave patterns.
+
+### Example: New formula showcase
+
+```json
+{
+  "section_count": 4,
+  "sections": [
+    {"formula": "fourier", "amplitude": 12, "cycles": 2, "phase_speed": 0.15},
+    {"formula": "chirp", "amplitude": 14, "cycles": 3, "phase_speed": 0.10},
+    {"formula": "trochoid", "amplitude": 10, "cycles": 2, "phase_speed": 0.12},
+    {"formula": "harmonic_fractal", "amplitude": 12, "cycles": 2, "phase_speed": 0.08}
+  ]
+}
+```
+
+This configuration demonstrates all four new formula types in different sections,
+showcasing their distinct visual characteristics.
+
+### Example: Custom expression in transition
+
+```json
+{
+  "formula": "straight",
+  "amplitude": 15,
+  "cycles": 1,
+  "phase_speed": 0,
+  "animated": true,
+  "loop": true,
+  "transitions": [
+    {"formula": "expr:sin(2*pi*u)+0.3*sin(6*pi*u)", "duration": 3.0, "easing": "cubic_in_out"},
+    {"formula": "expr:0.5*sin(4*pi*u)+0.25*sin(12*pi*u)", "duration": 3.0, "easing": "cubic_in_out"}
+  ]
+}
+```
+
+This transitions between two custom expressions, demonstrating how to create
+unique waveforms that don't match any preset formula. The `expr:` prefix indicates
+a custom mathematical expression instead of a preset name.
 
 ## Custom mathematical expressions
 

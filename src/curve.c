@@ -12,13 +12,28 @@
 static float clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
 static float fractf_pos(float v) { return v - floorf(v); }
 static float smoothstep(float v) { v = clamp01(v); return v * v * (3.0f - 2.0f * v); }
+static float apply_easing(float t, ProtoEasing easing) {
+    t = clamp01(t);
+    switch (easing) {
+        case PROTO_EASE_LINEAR: return t;
+        case PROTO_EASE_SMOOTHSTEP: return t * t * (3.0f - 2.0f * t);
+        case PROTO_EASE_QUAD_IN: return t * t;
+        case PROTO_EASE_QUAD_OUT: return t * (2.0f - t);
+        case PROTO_EASE_QUAD_IN_OUT: return t < 0.5f ? 2.0f * t * t : -1.0f + (4.0f - 2.0f * t) * t;
+        case PROTO_EASE_CUBIC_IN: return t * t * t;
+        case PROTO_EASE_CUBIC_OUT: { float f = t - 1.0f; return f * f * f + 1.0f; }
+        case PROTO_EASE_CUBIC_IN_OUT: return t < 0.5f ? 4.0f * t * t * t : (t - 1.0f) * (2.0f * t - 2.0f) * (2.0f * t - 2.0f) + 1.0f;
+        default: return t;
+    }
+}
 
 bool proto_valid_section_count(int count) {
     return count == 1 || count == 2 || count == 4 || count == 8 || count == 16;
 }
 
 const char *proto_formula_name(ProtoFormula formula) {
-    static const char *names[] = {"straight", "sine", "lightning", "fractal", "custom"};
+    static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
+                                   "chirp", "trochoid", "harmonic_fractal", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -42,9 +57,10 @@ void proto_config_defaults(ProtoConfig *config) {
     memcpy(config->violet, (unsigned char[]){135, 55, 205, 255}, 4);
     memcpy(config->cyan, (unsigned char[]){25, 219, 232, 255}, 4);
     memcpy(config->divider_color, (unsigned char[]){248, 248, 253, 255}, 4);
-    const ProtoFormula patterns[] = {PROTO_LIGHTNING, PROTO_SINE, PROTO_FRACTAL, PROTO_STRAIGHT};
+    const ProtoFormula patterns[] = {PROTO_FOURIER, PROTO_CHIRP, PROTO_TROCHOID, PROTO_HARMONIC_FRACTAL,
+                                     PROTO_LIGHTNING, PROTO_SINE, PROTO_FRACTAL, PROTO_STRAIGHT};
     for (int i = 0; i < PROTO_MAX_SECTIONS; ++i) {
-        config->sections[i] = (ProtoSection){.formula = patterns[i % 4],
+        config->sections[i] = (ProtoSection){.formula = patterns[i % 8],
                                              .amplitude = 14.0f,
                                              .cycles = 3.0f,
                                              .phase_speed = 0.14f,
@@ -62,6 +78,8 @@ void proto_animation_init(ProtoAnimation *animation, const ProtoConfig *config) 
         animation->current_transition[i] = 0;
         animation->transition_time[i] = 0.0f;
         animation->current_formula[i] = config->sections[i].formula;
+        strncpy(animation->current_expression[i], config->sections[i].expression, PROTO_EXPRESSION_LENGTH);
+        animation->current_expression[i][PROTO_EXPRESSION_LENGTH - 1] = '\0';
     }
 }
 
@@ -99,9 +117,16 @@ void proto_animation_tick(ProtoAnimation *animation, const ProtoConfig *config, 
                     if (animation->current_formula[i] != target) {
                         ProtoSection temp = *s;
                         temp.formula = animation->current_formula[i];
+                        strncpy(temp.expression, animation->current_expression[i], PROTO_EXPRESSION_LENGTH);
+                        temp.expression[PROTO_EXPRESSION_LENGTH - 1] = '\0';
                         animation->previous[i] = temp;
                         animation->morph[i] = 0.0f;
                         animation->current_formula[i] = target;
+                        /* If transition uses custom expression, copy it to animation state */
+                        if (target == PROTO_CUSTOM && next_trans->expression[0]) {
+                            strncpy(animation->current_expression[i], next_trans->expression, PROTO_EXPRESSION_LENGTH);
+                            animation->current_expression[i][PROTO_EXPRESSION_LENGTH - 1] = '\0';
+                        }
                     }
                 }
             }
@@ -145,6 +170,48 @@ static float formula_value(const ProtoSection *s, float u, float time) {
         v = sum / total;
         break;
     }
+    case PROTO_FOURIER: {
+        /* Superposition of sine waves with harmonic frequencies */
+        float sum = 0.0f;
+        sum += 1.0f * sinf(2.0f * PROTO_PI * (a + phase));
+        sum += 0.5f * sinf(2.0f * PROTO_PI * (2.0f * a + 1.5f * phase));
+        sum += 0.25f * sinf(2.0f * PROTO_PI * (3.0f * a + 2.0f * phase));
+        sum += 0.125f * sinf(2.0f * PROTO_PI * (4.0f * a + 2.5f * phase));
+        v = sum / 1.875f; /* Normalize by sum of weights */
+        break;
+    }
+    case PROTO_CHIRP: {
+        /* Frequency varies linearly with position: f(u) = f0 + k*u */
+        float f0 = 1.0f;
+        float k = 2.0f;
+        /* Integral of frequency over position gives phase */
+        float chirp_phase = 2.0f * PROTO_PI * (f0 * u + 0.5f * k * u * u + phase);
+        v = sinf(chirp_phase);
+        break;
+    }
+    case PROTO_TROCHOID: {
+        /* Cycloid-like curve: creates loops when amplitude > radius */
+        float R = 1.0f; /* Rolling circle radius */
+        float r = 0.5f; /* Point offset from center */
+        float theta = 2.0f * PROTO_PI * (a + phase);
+        /* Trochoid: x = R*theta - r*sin(theta), y = R - r*cos(theta) */
+        /* We only use the y component for vertical displacement */
+        v = (R - r * cosf(theta)) / (R + r); /* Normalize to [-1, 1] */
+        break;
+    }
+    case PROTO_HARMONIC_FRACTAL: {
+        /* More controlled harmonic series with finer detail */
+        float sum = 0.0f, weight = 1.0f, total = 0.0f;
+        for (int i = 0; i < 6; ++i) {
+            float freq = (float)(i + 1);
+            float phase_offset = phase * (1.0f + 0.2f * i);
+            sum += weight * sinf(2.0f * PROTO_PI * (a * freq + phase_offset));
+            total += weight;
+            weight *= 0.6f; /* Slower decay for more detail */
+        }
+        v = sum / total;
+        break;
+    }
     case PROTO_CUSTOM: {
         bool ok = false;
         v = proto_expression_evaluate(s->expression, u, time, s->amplitude,
@@ -177,10 +244,18 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
         ProtoSection temp_section = *s;
         if (s->animated) {
             temp_section.formula = animation->current_formula[index];
+            if (temp_section.formula == PROTO_CUSTOM && animation->current_expression[index][0]) {
+                strncpy(temp_section.expression, animation->current_expression[index], PROTO_EXPRESSION_LENGTH);
+            }
         }
         float next = formula_value(&temp_section, u, animation->time);
         float old = formula_value(&animation->previous[index], u, animation->time);
+        /* Apply easing from current transition if animated */
         float blend = smoothstep(animation->morph[index]);
+        if (s->animated && s->transition_count > 0) {
+            const ProtoTransition *trans = &s->transitions[animation->current_transition[index]];
+            blend = apply_easing(animation->morph[index], trans->easing);
+        }
         frame->offsets[i] = old + (next - old) * blend;
     }
 }

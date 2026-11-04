@@ -9,13 +9,13 @@
     "divider": "#F8F8FD"
   },
   "sections": [
-    {"formula": "straight", "amplitude": 15, "cycles": 1, "phase_speed": 0, "animated": true, "loop": true, "transitions": [{"formula": "sine", "duration": 2.0, "easing": "smoothstep"}, {"formula": "straight", "duration": 2.0, "easing": "smoothstep"}]},
+    {"formula": "fourier", "amplitude": 12, "cycles": 2, "phase_speed": 0.15},
+    {"formula": "chirp", "amplitude": 14, "cycles": 3, "phase_speed": 0.10},
+    {"formula": "trochoid", "amplitude": 10, "cycles": 2, "phase_speed": 0.12},
+    {"formula": "harmonic_fractal", "amplitude": 12, "cycles": 2, "phase_speed": 0.08},
+    {"formula": "straight", "amplitude": 15, "cycles": 1, "phase_speed": 0, "animated": true, "loop": true, "transitions": [{"formula": "sine", "duration": 2.0, "easing": "cubic_in_out"}, {"formula": "straight", "duration": 2.0, "easing": "cubic_in_out"}]},
     {"formula": "sine", "amplitude": 14, "cycles": 2, "phase_speed": 0.16},
     {"formula": "fractal", "amplitude": 14, "cycles": 2, "phase_speed": 0.12},
-    {"formula": "straight", "amplitude": 0, "cycles": 1, "phase_speed": 0},
-    {"formula": "tri(cycles*u + speed*t)", "amplitude": 13, "cycles": 3, "phase_speed": -0.10},
-    {"formula": "sin(2*pi*(cycles*u+speed*t))", "amplitude": 14, "cycles": 2, "phase_speed": 0.20},
-    {"formula": "sin(2*pi*cycles*u)+0.4*sin(8*pi*cycles*u+2*t)", "amplitude": 12, "cycles": 2, "phase_speed": 0.14},
     {"formula": "straight", "amplitude": 0, "cycles": 1, "phase_speed": 0},
     {"formula": "lightning", "amplitude": 15, "cycles": 3, "phase_speed": 0.10},
     {"formula": "sine", "amplitude": 14, "cycles": 2, "phase_speed": 0.16},
