@@ -24,6 +24,7 @@ typedef enum {
     PROTO_TROCHOID,
     PROTO_HARMONIC_FRACTAL,
     PROTO_SPIRAL,
+    PROTO_TRIANGLE,
     PROTO_CUSTOM,
     PROTO_FORMULA_COUNT
 } ProtoFormula;
@@ -42,7 +43,8 @@ typedef enum {
 
 typedef struct {
     ProtoFormula formula;
-    float duration;  /* Seconds for this transition */
+    float duration;  /* Hold seconds before the next morph starts. */
+    float morph_duration; /* Seconds to morph (zero means legacy 0.55 s). */
     ProtoEasing easing;
     char expression[PROTO_EXPRESSION_LENGTH]; /* For formula = custom in transitions */
 } ProtoTransition;
@@ -52,6 +54,9 @@ typedef struct {
     float amplitude;     /* Pixels perpendicular to the original divider. */
     float cycles;        /* Repetitions within one section. */
     float phase_speed;   /* Cycles per second, signed. */
+    float spiral_scale; /* 0=legacy 1.0, or 0.35..1.0 */
+    float gap_pixels;    /* Flat gap between motifs, 0..5 logical px. */
+    bool repeat_visible; /* Eight motifs span the visible half-line when selected. */
     char expression[PROTO_EXPRESSION_LENGTH]; /* For formula = custom. */
     bool animated;       /* Whether this section uses automatic transitions */
     bool loop;           /* Whether transitions repeat cyclically */
@@ -82,6 +87,7 @@ typedef struct {
     ProtoFormula current_formula[PROTO_MAX_SECTIONS];  /* Current formula for each section */
     bool finished[PROTO_MAX_SECTIONS];
     ProtoEasing active_easing[PROTO_MAX_SECTIONS];
+    float morph_seconds[PROTO_MAX_SECTIONS];
     char current_expression[PROTO_MAX_SECTIONS][PROTO_EXPRESSION_LENGTH];  /* For custom formulas in transitions */
 } ProtoAnimation;
 

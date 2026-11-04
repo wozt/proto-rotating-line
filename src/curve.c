@@ -292,7 +292,16 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
     float p = (local - start_local) / length;
     float cell_start = start + index * cell + start_local;
     if (s->formula == PROTO_SPIRAL) {
-        proto_spiral_point(p, cell_start, length, s->amplitude, curl, x, y);
+        /* Contract both spiral dimensions inside the original motif. */
+        const float scale = s->spiral_scale > 0.0f ?
+            fminf(1.0f, fmaxf(0.35f, s->spiral_scale)) : 1.0f;
+        const float compact_span = length * scale;
+        const float compact_start = cell_start + 0.5f * (length - compact_span);
+        if (baseline <= compact_start || baseline >= compact_start + compact_span)
+            return; /* remaining gap is exactly straight */
+        const float compact_u = (baseline - compact_start) / compact_span;
+        proto_spiral_point(compact_u, compact_start, compact_span,
+                           s->amplitude * scale, curl, x, y);
         return;
     }
     float wave;

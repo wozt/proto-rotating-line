@@ -1,0 +1,87 @@
+{
+  "section_count": 2,
+  "rotation_speed": 10.0,
+  "line_width": 1.0,
+  "show_divider": true,
+  "colors": {
+    "violet": "#8737CD",
+    "cyan": "#19DBE8",
+    "divider": "#FFFFFF"
+  },
+  "sections": [
+    {
+      "formula": "lightning",
+      "amplitude": 11,
+      "cycles": 4,
+      "phase_speed": 0,
+      "repeat_visible": true,
+      "gap_pixels": 2.0,
+      "animated": true,
+      "loop": true,
+      "transitions": [
+        {
+          "formula": "triangle",
+          "duration": 0.353,
+          "morph_duration": 7.843,
+          "easing": "smoothstep"
+        },
+        {
+          "formula": "straight",
+          "duration": 0.353,
+          "morph_duration": 7.843,
+          "easing": "smoothstep"
+        },
+        {
+          "formula": "triangle",
+          "duration": 0.353,
+          "morph_duration": 7.843,
+          "easing": "smoothstep"
+        },
+        {
+          "formula": "lightning",
+          "duration": 0.353,
+          "morph_duration": 7.843,
+          "easing": "smoothstep"
+        }
+      ],
+      "spiral_scale": 1.0
+    },
+    {
+      "formula": "spiral",
+      "amplitude": 10,
+      "cycles": 4,
+      "phase_speed": 0,
+      "repeat_visible": true,
+      "gap_pixels": 2.0,
+      "animated": true,
+      "loop": true,
+      "transitions": [
+        {
+          "formula": "sine",
+          "duration": 0.353,
+          "morph_duration": 11.765,
+          "easing": "smoothstep"
+        },
+        {
+          "formula": "straight",
+          "duration": 0.353,
+          "morph_duration": 11.765,
+          "easing": "smoothstep"
+        },
+        {
+          "formula": "sine",
+          "duration": 0.353,
+          "morph_duration": 11.765,
+          "easing": "smoothstep"
+        },
+        {
+          "formula": "spiral",
+          "duration": 0.353,
+          "morph_duration": 11.765,
+          "easing": "smoothstep"
+        }
+      ],
+      "spiral_scale": 0.45
+    }
+  ]
+}

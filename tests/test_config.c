@@ -32,10 +32,12 @@ int main(void) {
     input.cyan[1] = 0x34;
     input.sections[15].formula = PROTO_CUSTOM;
     strcpy(input.sections[15].expression, "sin(2*pi*(cycles*u+speed*t))");
+    input.sections[1].spiral_scale = 0.58f;
     assert(proto_config_save(path, &input, error, sizeof error));
     proto_config_defaults(&loaded);
     assert(proto_config_load(path, &loaded, error, sizeof error));
     assert(loaded.section_count == 16);
+    assert(fabsf(loaded.sections[1].spiral_scale - 0.58f) < 0.001f);
     assert(loaded.rotation_speed == -15.0f);
     assert(fabsf(loaded.sections[0].gap_pixels - 3.0f) < 0.001f);
     assert(loaded.sections[0].repeat_visible);
@@ -45,6 +47,8 @@ int main(void) {
     assert(loaded.sections[15].formula == PROTO_CUSTOM);
     assert(!strcmp(loaded.sections[15].expression, input.sections[15].expression));
     overwrite(path, "{\"section_count\":2,\"sections\":[{\"formula\":\"straight\",\"gap_pixels\":6},{\"formula\":\"straight\"}]}");
+    assert(!proto_config_load(path, &loaded, error, sizeof error));
+    overwrite(path, "{\"section_count\":1,\"sections\":[{\"formula\":\"spiral\",\"spiral_scale\":0.2}]}");
     assert(!proto_config_load(path, &loaded, error, sizeof error));
     overwrite(path, "{\"section_count\":3}");
     assert(!proto_config_load(path, &loaded, error, sizeof error));

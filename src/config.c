@@ -226,6 +226,7 @@ static bool transition_json(const Json *j, int idx, ProtoTransition *t) {
     if (idx < 0 || j->tokens[idx].kind != T_OBJECT) return false;
     unsigned seen = 0;
     t->expression[0] = '\0';  /* Clear expression by default */
+    t->morph_duration = 0.55f;
     for (int key = idx + 1; key < j->tokens[idx].next;) {
         int value = key + 1;
         unsigned bit = 0;
@@ -244,6 +245,9 @@ static bool transition_json(const Json *j, int idx, ProtoTransition *t) {
         } else if (key_is(j, key, "duration")) {
             bit = 2;
             if (!scalar(j, value, &t->duration, 0.1f, 60.0f)) return false;
+        } else if (key_is(j, key, "morph_duration")) {
+            bit = 8;
+            if (!scalar(j, value, &t->morph_duration, 0.1f, 60.0f)) return false;
         } else if (key_is(j, key, "easing")) {
             bit = 4;
             if (!easing_json(j, value, &t->easing)) return false;
@@ -281,6 +285,16 @@ static bool section_json(const Json *j, int idx, ProtoSection *s) {
         } else if (key_is(j, key, "phase_speed")) {
             bit = 8;
             if (!scalar(j, value, &s->phase_speed, -4.0f, 4.0f)) return false;
+        } else if (key_is(j, key, "gap_pixels")) {
+            bit = 128;
+            if (!scalar(j, value, &s->gap_pixels, 0.0f, 5.0f)) return false;
+        } else if (key_is(j, key, "repeat_visible")) {
+            bit = 256;
+            if (j->tokens[value].kind != T_TRUE && j->tokens[value].kind != T_FALSE) return false;
+            s->repeat_visible = j->tokens[value].kind == T_TRUE;
+        } else if (key_is(j, key, "spiral_scale")) {
+            bit = 512;
+            if (!scalar(j, value, &s->spiral_scale, 0.35f, 1.0f)) return false;
         } else if (key_is(j, key, "animated")) {
             bit = 16;
             s->animated = j->tokens[value].kind == T_TRUE;
@@ -478,6 +492,10 @@ bool proto_config_save(const char *path, const ProtoConfig *config, char *error,
              fprintf(file, ", \"amplitude\": %.3f, \"cycles\": %.3f, "
                            "\"phase_speed\": %.3f",
                      s->amplitude, s->cycles, s->phase_speed) >= 0;
+        if (ok) ok = fprintf(file, ", \"gap_pixels\": %.3f, \"repeat_visible\": %s",
+                             s->gap_pixels, s->repeat_visible ? "true" : "false") >= 0;
+        if (ok) ok = fprintf(file, ", \"spiral_scale\": %.3f",
+                          s->spiral_scale > 0.0f ? s->spiral_scale : 1.0f) >= 0;
         if (ok && s->animated) {
             ok = fprintf(file, ", \"animated\": true") >= 0;
             if (ok && s->loop) ok = fprintf(file, ", \"loop\": true") >= 0;
@@ -488,8 +506,8 @@ bool proto_config_save(const char *path, const ProtoConfig *config, char *error,
                     const char *name = trans->formula == PROTO_CUSTOM ? trans->expression : proto_formula_name(trans->formula);
                     ok = fprintf(file, "%s{\"formula\": ", t == 0 ? "" : ", ") >= 0 &&
                          write_string(file, name) == 0 &&
-                         fprintf(file, ", \"duration\": %.3f, \"easing\": \"%s\"}",
-                                 trans->duration,
+                         fprintf(file, ", \"duration\": %.3f, \"morph_duration\": %.3f, \"easing\": \"%s\"}",
+                                 trans->duration, trans->morph_duration > 0.0f ? trans->morph_duration : 0.55f,
                                  easing_name(trans->easing)) >= 0;
                 }
                 if (ok) ok = fprintf(file, "]") >= 0;

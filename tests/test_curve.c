@@ -310,6 +310,54 @@ int main(void) {
         proto_spiral_point(0.88f, 0.0f, span, amplitude, 1.0f, &x, &y);
         assert(hypotf(x - cx, y - cy) < 0.002f);
     }
+    /* Patch 0008: four compact coils are smaller than untouched lightning,
+     * while every one still folds and their endpoints remain connected. */
+    {
+        ProtoConfig compact;
+        proto_config_defaults(&compact);
+        compact.section_count = 2;
+        compact.rotation_speed = 0.0f;
+        compact.sections[0].formula = PROTO_LIGHTNING;
+        compact.sections[0].amplitude = 11.0f;
+        compact.sections[0].cycles = 4.0f;
+        compact.sections[0].gap_pixels = 2.0f;
+        compact.sections[0].repeat_visible = true;
+        compact.sections[1].formula = PROTO_SPIRAL;
+        compact.sections[1].amplitude = 10.0f;
+        compact.sections[1].spiral_scale = 0.45f;
+        compact.sections[1].cycles = 4.0f;
+        compact.sections[1].gap_pixels = 2.0f;
+        compact.sections[1].repeat_visible = true;
+        ProtoAnimation a8;
+        ProtoFrame f8;
+        proto_animation_init(&a8, &compact);
+        proto_make_frame(&compact, &a8, &f8);
+        float bolt_max = 0.0f, wave_max = 0.0f;
+        int curl_count = 0;
+        for (int k = 1; k < PROTO_PROFILE_SAMPLES; ++k) {
+            float x = -168.0f + 336.0f * k / (PROTO_PROFILE_SAMPLES - 1);
+            if (x < 0.0f) bolt_max = fmaxf(bolt_max, fabsf(f8.offsets[k]));
+            else wave_max = fmaxf(wave_max, fabsf(f8.offsets[k]));
+        }
+        assert(bolt_max > 6.0f);
+        assert(wave_max > 2.0f);
+        assert(wave_max < bolt_max * 0.75f);
+        for (int j = 0; j < 4; ++j) {
+            float x0 = 30.0f * j, x1 = x0 + 30.0f;
+            bool folded = false;
+            for (int k = 1; k < PROTO_PROFILE_SAMPLES; ++k) {
+                float base_x = -168.0f + 336.0f * k / (PROTO_PROFILE_SAMPLES - 1);
+                if (base_x > x0 + 1.0f && base_x < x1 - 1.0f &&
+                    f8.x_coords[k] < f8.x_coords[k-1] - 0.001f)
+                    folded = true;
+            }
+            if (folded) ++curl_count;
+        }
+        assert(curl_count == 4);
+        for (int y = 0; y < PROTO_HEIGHT; y += 8)
+            for (int x = 0; x < PROTO_WIDTH; x += 8)
+                assert(isfinite(proto_signed_side(&f8, x+0.5f, y+0.5f)));
+    }
     puts("curve_math: ok");
     return 0;
 }
