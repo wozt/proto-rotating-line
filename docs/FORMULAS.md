@@ -38,6 +38,204 @@ manual edits not yet reloaded).
 - `amplitude`: **0..48 logical pixels**; `cycles`: **0.25..12**;
   `phase_speed`: **-4..4 cycles/second**. Each section has independent values.
 
+## Animation transitions (60 FPS automatic cycling)
+
+Each section can now automatically cycle through multiple formulas using the
+`animated` and `transitions` fields. The simulation runs at a fixed 60 FPS
+timestep for deterministic animation, synchronized with SDL VSync.
+
+### Transition structure
+
+```json
+{
+  "formula": "sine",
+  "amplitude": 14,
+  "cycles": 2,
+  "phase_speed": 0.16,
+  "animated": true,
+  "loop": true,
+  "transitions": [
+    {"formula": "sine", "duration": 2.0, "easing": "smoothstep"},
+    {"formula": "straight", "duration": 2.0, "easing": "smoothstep"}
+  ]
+}
+```
+
+- `animated`: Enable automatic formula transitions for this section.
+- `loop`: If true, transitions repeat cyclically; if false, animation stops at the last transition.
+- `transitions`: Array of transition objects, each specifying:
+  - `formula`: Target formula to transition to (preset name only, not custom expressions).
+  - `duration`: Seconds to wait at the current formula before triggering the next transition (0.1..60).
+  - `easing`: Transition smoothing function: `"linear"` or `"smoothstep"`.
+
+The transition timing works as follows:
+1. When `animated` is true and a morph completes, the section waits for `duration` seconds.
+2. After the duration elapses, the formula smoothly morphs to the next transition's target.
+3. The morph takes approximately 0.55 seconds (internal constant).
+4. If `loop` is true, the cycle repeats from the first transition after the last one.
+
+### Example: Cyclic straight → sine → straight
+
+```json
+{
+  "formula": "straight",
+  "amplitude": 15,
+  "cycles": 1,
+  "phase_speed": 0,
+  "animated": true,
+  "loop": true,
+  "transitions": [
+    {"formula": "sine", "duration": 2.0, "easing": "smoothstep"},
+    {"formula": "straight", "duration": 2.0, "easing": "smoothstep"}
+  ]
+}
+```
+
+This configuration:
+- Starts as a straight line.
+- After 2 seconds, morphs to a sine wave (0.55s transition).
+- Waits at sine for 2 seconds.
+- Morphs back to straight (0.55s transition).
+- Repeats indefinitely due to `loop: true`.
+
+### Example: One-way transformation
+
+```json
+{
+  "formula": "straight",
+  "amplitude": 12,
+  "cycles": 1,
+  "phase_speed": 0,
+  "animated": true,
+  "loop": false,
+  "transitions": [
+    {"formula": "sine", "duration": 3.0, "easing": "smoothstep"},
+    {"formula": "fractal", "duration": 4.0, "easing": "smoothstep"}
+  ]
+}
+```
+
+This configuration:
+- Starts as straight.
+- Transforms to sine after 3 seconds.
+- Transforms to fractal after 4 more seconds.
+- Stops at fractal (no loop).
+
+### Example: Multi-section phase animation
+
+Different sections can have different animation cycles, creating complex patterns:
+
+```json
+{
+  "section_count": 4,
+  "sections": [
+    {
+      "formula": "straight",
+      "amplitude": 15,
+      "cycles": 1,
+      "phase_speed": 0,
+      "animated": true,
+      "loop": true,
+      "transitions": [
+        {"formula": "sine", "duration": 2.0, "easing": "smoothstep"},
+        {"formula": "straight", "duration": 2.0, "easing": "smoothstep"}
+      ]
+    },
+    {
+      "formula": "sine",
+      "amplitude": 14,
+      "cycles": 2,
+      "phase_speed": 0.16
+    },
+    {
+      "formula": "straight",
+      "amplitude": 15,
+      "cycles": 1,
+      "phase_speed": 0,
+      "animated": true,
+      "loop": true,
+      "transitions": [
+        {"formula": "fractal", "duration": 3.0, "easing": "smoothstep"},
+        {"formula": "straight", "duration": 3.0, "easing": "smoothstep"}
+      ]
+    },
+    {
+      "formula": "lightning",
+      "amplitude": 12,
+      "cycles": 4,
+      "phase_speed": 0.10
+    }
+  ]
+}
+```
+
+This creates a rotating divider where sections 0 and 2 undergo independent
+transformations while sections 1 and 3 remain static with their phase animations.
+
+## Composing formulas with custom expressions
+
+While transitions work with preset formulas (straight, sine, lightning, fractal),
+you can create more complex behaviors using custom expressions with time-dependent
+parameters. The `t` variable represents animation time in seconds.
+
+### Time-varying amplitude
+
+```json
+{
+  "formula": "sin(2*pi*cycles*u+speed*t)*(1-cos(2*pi*t/5))/2",
+  "amplitude": 20,
+  "cycles": 3,
+  "phase_speed": 0.2
+}
+```
+
+This sine wave's amplitude smoothly oscillates between 0 and the configured
+amplitude over a 5-second period, creating a breathing effect.
+
+### Morphing between wave types
+
+```json
+{
+  "formula": "(1-f)*sin(2*pi*cycles*u+speed*t)+f*tri(cycles*u+speed*t)",
+  "amplitude": 15,
+  "cycles": 2,
+  "phase_speed": 0.15
+}
+```
+
+Note: This example would need a `f` variable that changes over time, which isn't
+directly supported in expressions. For such transformations, use the transition
+system instead, which handles morphing between different formulas automatically.
+
+### Complex harmonic composition
+
+```json
+{
+  "formula": "sin(2*pi*cycles*u+speed*t)+0.5*sin(4*pi*cycles*u+2*speed*t)+0.25*sin(8*pi*cycles*u+3*speed*t)",
+  "amplitude": 18,
+  "cycles": 2,
+  "phase_speed": 0.1
+}
+```
+
+This creates a rich wave by summing three harmonics with different frequencies
+and phase speeds, approximating a Fourier series with time-dependent phase shifts.
+
+## Limitations and future work
+
+**Parametric curves (spirals)**: The current system represents the divider as a
+single-valued graph offset from its tangent. True spirals (Archimedean, logarithmic)
+require parametric curves with explicit (x, y) coordinates and robust region
+classification to handle self-intersections. This is planned for a future update.
+
+**Easing functions**: Currently only `linear` and `smoothstep` are implemented.
+Additional easing functions (ease-in, ease-out, cubic, elastic) could be added
+for more varied transition behaviors.
+
+**Custom expression transitions**: Transitions currently only support preset
+formulas. Supporting custom expressions in transitions would require careful
+validation and handling of expression strings during morphing.
+
 ## Preset formulas
 
 The `formula` string may be `straight`, `sine`, `lightning`, or `fractal`.
@@ -108,4 +306,5 @@ Important limitation: the current viewer represents the divider as a
 **single-valued graph** relative to its rotating tangent. A genuine inward
 spiral/escargot folds back on itself; that requires a later **parametric
 curve with region classification**, not a graph expression that only controls
-normal displacement. This first JSON step does not pretend otherwise.
+normal displacement. For spirals, use the transition system or wait for the
+parametric curve implementation (planned for a future update).
