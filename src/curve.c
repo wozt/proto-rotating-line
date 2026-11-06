@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -346,7 +346,8 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
         spatial_gradient_point(s, baseline, u, start, span, t, x, y);
         return;
     }
-    bool repeated = s->formula == PROTO_FERMAT_SPIRAL ||
+    bool repeated = s->formula == PROTO_FERMAT_TWIST ||
+                    s->formula == PROTO_FERMAT_SPIRAL ||
                     s->formula == PROTO_SPIRAL ||
                     s->formula == PROTO_WOLFRAM_HALFTURN ||
                     s->formula == PROTO_WOLFRAM_TENTACLE ||
@@ -377,6 +378,15 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
             0.25f * (1.0f - cosf(2.0f * PROTO_PI * s->phase_speed * t));
         proto_wolfram_tentacle_point(p, cell_start, length, s->amplitude,
                                      limit, 0.18f * s->amplitude, x, y);
+        return;
+    }
+    if (s->formula == PROTO_FERMAT_TWIST) {
+        /* Equal-size cells: grade affects TURN DEVELOPMENT, not amplitude. */
+        const float grade = (float)(index+1) / (float)n;
+        const float progress = proto_fermat_twist_progress(t, s->phase_speed);
+        const float direction = proto_fermat_twist_direction(t, s->phase_speed);
+        proto_fermat_twist_point(p, cell_start, length, s->amplitude,
+                                progress, grade, direction, x, y);
         return;
     }
     if (s->formula == PROTO_FERMAT_SPIRAL) {
@@ -498,6 +508,9 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
             frame->parametric = true;
     for (int side = 0; side < config->section_count; ++side)
         if (config->sections[side].formula == PROTO_FERMAT_SPIRAL)
+            frame->parametric = true;
+    for (int side = 0; side < config->section_count; ++side)
+        if (config->sections[side].formula == PROTO_FERMAT_TWIST)
             frame->parametric = true;
     if (frame->parametric) proto_parametric_prepare(frame);
     proto_wolfram_ribbon_prepare(frame, config, animation);

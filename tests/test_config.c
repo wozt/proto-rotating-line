@@ -250,6 +250,23 @@ int main(void) {
         assert(grad.sections[1].repeat_visible);
     }
 #endif
+#ifdef PROTO_FERMAT_TWIST_CFG
+    {
+        ProtoConfig twist22, roundtrip22;
+        proto_config_defaults(&twist22);
+        assert(proto_config_load(PROTO_FERMAT_TWIST_CFG, &twist22, error, sizeof error));
+        assert(twist22.sections[1].formula == PROTO_FERMAT_TWIST);
+        assert(fabsf(twist22.sections[1].phase_speed - .2f) < .0001f);
+        assert(fabsf(twist22.sections[1].amplitude - 15.0f) < .0001f);
+        assert(twist22.sections[1].cycles == 4.0f);
+        assert(twist22.sections[0].phase_speed == twist22.sections[1].phase_speed);
+        assert(proto_config_save(path, &twist22, error, sizeof error));
+        proto_config_defaults(&roundtrip22);
+        assert(proto_config_load(path, &roundtrip22, error, sizeof error));
+        assert(roundtrip22.sections[1].formula == PROTO_FERMAT_TWIST);
+        remove(path);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

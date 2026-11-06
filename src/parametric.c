@@ -548,6 +548,83 @@ void proto_fermat_spiral_point(float p, float cell_start, float cell_span,
 }
 
 
+/* Patch 0022: make the motion noticeably faster in the middle of EACH
+ * expansion and retraction half. The velocity envelope is the cube of the
+ * normalized parabola 4u(1-u), rather than a constant-rate or sine ease.
+ * Integrated exact position: 35u^4 - 84u^5 + 70u^6 - 20u^7. */
+float proto_fermat_twist_progress(float time, float phase_speed) {
+    if (phase_speed == 0.0f) return 1.0f;
+    const double cycles = (double)time * fabs((double)phase_speed);
+    double phase = cycles - floor(cycles);
+    if (phase < 0.0) phase += 1.0;
+    const double u = phase <= 0.5 ? 2.0 * phase : 2.0 * (1.0 - phase);
+    const double u2 = u * u;
+    const double u4 = u2 * u2;
+    return (float)(u4 * (35.0 + u * (-84.0 + u * (70.0 - 20.0 * u))));
+}
+
+/* The full 0->100->0 loop (5 s in the supplied profile) keeps one direction.
+ * The NEXT loop is mirrored. Switch only when the shape is fully flat. */
+float proto_fermat_twist_direction(float time, float phase_speed) {
+    if (phase_speed == 0.0f) return 1.0f;
+    const double cycle = floor((double)time * fabs((double)phase_speed));
+    return fmod(cycle, 2.0) == 0.0 ? 1.0f : -1.0f;
+}
+
+/* Same softened Fermat-tentacle outline as patch 0021, but with separate
+ * independent controls for physical growth and winding development.
+ *  - progress: physical base grows identically for ALL FOUR cells
+ *  - winding: .25 / .50 / .75 / 1.00 of the total tip turns
+ *  - direction: +/- to mirror the rotation on alternating cycles
+ * This is a continuous two-arm dividing curve, not an overlaid tube. */
+void proto_fermat_twist_point(float p, float cell_start, float cell_span,
+                              float amplitude, float progress, float winding,
+                              float direction, float *x, float *y) {
+    p = fmaxf(0.0f, fminf(1.0f, p));
+    progress = fmaxf(0.0f, fminf(1.0f, progress));
+    winding = fmaxf(0.0f, fminf(1.0f, winding));
+    const float centre = cell_start + 0.5f * cell_span;
+    const float max_radius = fminf(fmaxf(amplitude, 0.0f), 0.49f * cell_span);
+    const float outer_radius = max_radius * powf(progress, 0.58f);
+    const float theta_max = 7.0f * PI * powf(progress, 1.18f) * winding;
+    const float lead = 0.12f, trail = 0.88f;
+    *y = 0.0f;
+
+    if (progress <= 0.0001f || theta_max <= 0.0001f || outer_radius <= 0.0001f) {
+        *x = cell_start + p * cell_span;
+        return;
+    }
+    if (p <= lead) {
+        *x = cell_start + (centre - outer_radius - cell_start) * (p / lead);
+        return;
+    }
+    if (p >= trail) {
+        const float u = (p-trail)/(1.0f-trail);
+        *x = centre + outer_radius +
+             (cell_start + cell_span - centre - outer_radius) * u;
+        return;
+    }
+
+    float arm_u, side;
+    if (p <= 0.5f) {
+        arm_u = (p-lead)/(0.5f-lead);
+        side = -1.0f;
+    } else {
+        arm_u = (trail-p)/(trail-0.5f);
+        side = 1.0f;
+    }
+    arm_u = fmaxf(0.0f, fminf(1.0f, arm_u));
+    const float radius = outer_radius * powf(1.0f-arm_u, 0.58f);
+    const float shoulder_t = fminf(1.0f, arm_u/0.22f);
+    const float shoulder = shoulder_t * shoulder_t * shoulder_t *
+        (shoulder_t*(6.0f*shoulder_t-15.0f)+10.0f);
+    const float tip_turn = powf(arm_u, 2.35f) * shoulder;
+    const float angle = -(direction < 0.0f ? -1.0f : 1.0f) * theta_max * tip_turn;
+
+    *x = centre + side * radius * cosf(angle);
+    *y = side * radius * sinf(angle);
+}
+
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES - 1; ++i) {

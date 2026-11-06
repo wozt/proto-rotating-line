@@ -25,6 +25,13 @@ void proto_fermat_spiral_point(float p, float cell_start,
                                float progress, float *x, float *y);
 /* Piecewise cubic position; parabolic velocity per half-cycle. */
 float proto_fermat_parabolic_progress(float time, float phase_speed);
+/* Faster 5s two-arm Fermat with independent winding depth. */
+float proto_fermat_twist_progress(float time, float phase_speed);
+float proto_fermat_twist_direction(float time, float phase_speed);
+void proto_fermat_twist_point(float p, float cell_start,
+                              float cell_span, float amplitude,
+                              float progress, float winding,
+                              float direction, float *x, float *y);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif
