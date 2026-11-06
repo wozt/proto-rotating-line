@@ -381,12 +381,17 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
         return;
     }
     if (s->formula == PROTO_FERMAT_TWIST) {
-        /* Equal-size cells: grade affects TURN DEVELOPMENT, not amplitude. */
-        const float grade = (float)(index+1) / (float)n;
+        /* Patch 0024: two independent spatial gradients, one common clock:
+         * size 100/85/70/55%, winding 25/50/75/100%. Both index parity
+         * and 5-second cycle parity flip the rotation direction. */
+        const float winding = fminf(1.0f, 0.25f * (float)(index + 1));
+        const float size_grade = fmaxf(0.10f, 1.0f - 0.15f * (float)index);
+        const float max_radius = fminf(s->amplitude, 0.49f * length);
         const float progress = proto_fermat_twist_progress(t, s->phase_speed);
-        const float direction = proto_fermat_twist_direction(t, s->phase_speed);
-        proto_fermat_twist_point(p, cell_start, length, s->amplitude,
-                                progress, grade, direction, x, y);
+        const float direction = proto_fermat_twist_direction(t, s->phase_speed) *
+                                ((index & 1) ? -1.0f : 1.0f);
+        proto_fermat_twist_point(p, cell_start, length, max_radius * size_grade,
+                                progress, winding, direction, x, y);
         return;
     }
     if (s->formula == PROTO_FERMAT_SPIRAL) {

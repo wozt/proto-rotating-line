@@ -587,7 +587,9 @@ void proto_fermat_twist_point(float p, float cell_start, float cell_span,
     const float max_radius = fminf(fmaxf(amplitude, 0.0f), 0.49f * cell_span);
     const float outer_radius = max_radius * powf(progress, 0.58f);
     const float theta_max = 7.0f * PI * powf(progress, 1.18f) * winding;
-    const float lead = 0.12f, trail = 0.88f;
+    /* Wide shoulders and zero endpoint tangents, rather than two joined
+     * straight pieces with visible corners. */
+    const float lead = 0.20f, trail = 0.80f;
     *y = 0.0f;
 
     if (progress <= 0.0001f || theta_max <= 0.0001f || outer_radius <= 0.0001f) {
@@ -595,35 +597,50 @@ void proto_fermat_twist_point(float p, float cell_start, float cell_span,
         return;
     }
     if (p <= lead) {
-        *x = cell_start + (centre - outer_radius - cell_start) * (p / lead);
+        const float q = p / lead;
+        const float smooth = q * q * (3.0f - 2.0f * q);
+        *x = cell_start + (centre - outer_radius - cell_start) * smooth;
         return;
     }
     if (p >= trail) {
-        const float u = (p-trail)/(1.0f-trail);
+        const float q = (p - trail) / (1.0f - trail);
+        const float smooth = q * q * (3.0f - 2.0f * q);
         *x = centre + outer_radius +
-             (cell_start + cell_span - centre - outer_radius) * u;
+             (cell_start + cell_span - centre - outer_radius) * smooth;
         return;
     }
 
     float arm_u, side;
     if (p <= 0.5f) {
-        arm_u = (p-lead)/(0.5f-lead);
+        arm_u = (p - lead) / (0.5f - lead);
         side = -1.0f;
     } else {
-        arm_u = (trail-p)/(trail-0.5f);
+        arm_u = (trail - p) / (trail - 0.5f);
         side = 1.0f;
     }
     arm_u = fmaxf(0.0f, fminf(1.0f, arm_u));
-    const float radius = outer_radius * powf(1.0f-arm_u, 0.58f);
-    const float shoulder_t = fminf(1.0f, arm_u/0.22f);
+
+    /* Broad radius at the root, with ZERO slope at u=0 (C1 join). The
+     * extra term cancels the derivative of (1-u)^0.64 at u=0 and fades
+     * smoothly by u=0.4, without softening the final pointed tip. */
+    const float root_q = fminf(1.0f, arm_u / 0.40f);
+    const float root_fade = 1.0f - root_q * root_q * (3.0f - 2.0f * root_q);
+    const float radius = outer_radius * powf(1.0f - arm_u, 0.64f) *
+                         (1.0f + 0.64f * arm_u * root_fade);
+
+    /* Much rounder shoulder at the root. */
+    const float shoulder_t = fminf(1.0f, arm_u / 0.40f);
     const float shoulder = shoulder_t * shoulder_t * shoulder_t *
-        (shoulder_t*(6.0f*shoulder_t-15.0f)+10.0f);
-    const float tip_turn = powf(arm_u, 2.35f) * shoulder;
+        (shoulder_t * (shoulder_t * 6.0f - 15.0f) + 10.0f);
+
+    /* Most of the turns still happen near the tip. */
+    const float tip_turn = powf(arm_u, 2.55f) * shoulder * shoulder;
     const float angle = -(direction < 0.0f ? -1.0f : 1.0f) * theta_max * tip_turn;
 
     *x = centre + side * radius * cosf(angle);
     *y = side * radius * sinf(angle);
 }
+
 
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);

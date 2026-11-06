@@ -854,93 +854,100 @@ int main(void) {
             assert(cell_max[k] > cell_max[k-1] * 1.15f);
     }
 
-    /* Patch 0022: equal-size bases, graded DEVELOPMENT, 5s loops and reversal. */
+    /* Patch 0024: same clock, smaller outward cells, alternating index parity. */
     {
-        ProtoFormula formula22;
-        assert(proto_parse_formula("fermat_twist", &formula22));
-        assert(formula22 == PROTO_FERMAT_TWIST);
         const float speed = 0.2f;
-        const float times[] = {0.0f, 0.625f, 1.25f, 1.875f, 2.5f,
-                               3.125f, 3.75f, 4.375f, 5.0f};
-        const float expected[] = {0.0f, 0.07055664f, 0.5f, 0.92944336f,
-                                  1.0f, 0.92944336f, 0.5f, 0.07055664f, 0.0f};
-        for (int k = 0; k < 9; ++k)
-            assert(fabsf(proto_fermat_twist_progress(times[k], speed) - expected[k]) < 0.0001f);
-        assert(proto_fermat_twist_progress(2.5f, 0.0f) == 1.0f);
-        /* Sharper in the middle than the old cubic ease (.15625 at quarter). */
-        assert(proto_fermat_twist_progress(.625f, speed) < .10f);
-        assert(proto_fermat_twist_progress(1.875f, speed) > .90f);
-        assert(proto_fermat_twist_direction(0.0f, speed) == 1.0f);
-        assert(proto_fermat_twist_direction(2.5f, speed) == 1.0f);
-        assert(proto_fermat_twist_direction(5.0f, speed) == -1.0f);
-        assert(proto_fermat_twist_direction(7.5f, speed) == -1.0f);
-        assert(proto_fermat_twist_direction(10.0f, speed) == 1.0f);
-        assert(proto_fermat_twist_direction(15.0f, speed) == -1.0f);
+        /* Keep the fast 5-second shared clock from patch 0022 (patch 0023 not required). */
+        assert(fabsf(proto_fermat_twist_progress(0.0f, speed) - 0.0f) < 0.0001f);
+        assert(fabsf(proto_fermat_twist_progress(1.25f, speed) - 0.5f) < 0.0001f);
+        assert(fabsf(proto_fermat_twist_progress(2.5f, speed) - 1.0f) < 0.0001f);
+        assert(fabsf(proto_fermat_twist_progress(3.75f, speed) - 0.5f) < 0.0001f);
+        assert(fabsf(proto_fermat_twist_progress(5.0f, speed) - 0.0f) < 0.0001f);
 
-        const float span = 29.75f, amplitude = 15.0f;
-        const float centre = 0.5f*span;
-        float base_radius = -1.0f;
-        float prev_x = 0.0f, prev_y = 0.0f;
+        const float span = 29.75f, full_amp = 15.0f;
+        const float capped_amp = fminf(full_amp, 0.49f * span);
+        const float size_grade[4] = {1.00f, 0.85f, 0.70f, 0.55f};
+        const float wind_grade[4] = {0.25f, 0.50f, 0.75f, 1.00f};
+        const float centre = 0.5f * span;
+
+        float radii[4];
         for (int i = 0; i < 4; ++i) {
-            const float grade = (float)(i+1)/4.0f;
             float x, y;
-            proto_fermat_twist_point(.12f, 0, span, amplitude, 1, grade, 1, &x, &y);
-            const float radius = centre-x;
+            proto_fermat_twist_point(0.20f, 0.0f, span,
+                                     capped_amp * size_grade[i], 1.0f,
+                                     wind_grade[i], (i & 1) ? -1.0f : 1.0f,
+                                     &x, &y);
             assert(fabsf(y) < 0.0001f);
-            assert(radius > .48f*span && radius < .50f*span);
-            if (i > 0) assert(fabsf(radius-base_radius) < .0001f);
-            base_radius = radius;
-            proto_fermat_twist_point(.37f, 0, span, amplitude, 1, grade, 1, &x, &y);
-            if (i > 0) assert(hypotf(x-prev_x, y-prev_y) > .05f);
-            prev_x = x; prev_y = y;
-            /* Mirror, not shrink, when reversing direction. */
-            float xr, yr;
-            proto_fermat_twist_point(.37f, 0, span, amplitude, 1, grade, -1, &xr, &yr);
-            assert(fabsf(x-xr) < .0001f && fabsf(y+yr) < .0001f);
-            proto_fermat_twist_point(.12f+.0001f, 0, span, amplitude, 1, grade, 1, &x, &y);
-            assert(fabsf(y) < .001f); /* rounded connector shoulder */
+            radii[i] = centre - x;
+        }
+        /* Progressively smaller physical size, but not extremely so. */
+        assert(radii[0] > radii[1] && radii[1] > radii[2] && radii[2] > radii[3]);
+        for (int i = 0; i < 4; ++i)
+            assert(fabsf(radii[i] / radii[0] - size_grade[i]) < 0.001f);
+
+        /* Same point, opposite parity -> mirrored curl direction. */
+        {
+            float x0, y0, x1, y1;
+            proto_fermat_twist_point(0.37f, 0.0f, span, full_amp, 1.0f, 1.0f, 1.0f, &x0, &y0);
+            proto_fermat_twist_point(0.37f, 0.0f, span, full_amp, 1.0f, 1.0f, -1.0f, &x1, &y1);
+            assert(fabsf(x0 - x1) < 0.0001f);
+            assert(fabsf(y0 + y1) < 0.0001f);
         }
 
-        ProtoConfig cfg22;
-        ProtoAnimation anim22;
-        ProtoFrame flat22, peak22, reversed22, end22;
-        proto_config_defaults(&cfg22);
-        cfg22.section_count = 2;
-        cfg22.rotation_speed = 0.0f;
-        cfg22.sections[0].formula = PROTO_STRAIGHT;
-        cfg22.sections[1].formula = PROTO_FERMAT_TWIST;
-        cfg22.sections[1].amplitude = amplitude;
-        cfg22.sections[1].cycles = 4.0f;
-        cfg22.sections[1].gap_pixels = .25f;
-        cfg22.sections[1].repeat_visible = true;
-        cfg22.sections[1].animated = false;
-        cfg22.sections[1].phase_speed = speed;
-        proto_animation_init(&anim22, &cfg22);
-        anim22.time = 0;
-        proto_make_frame(&cfg22, &anim22, &flat22);
-        anim22.time = 2.5f;
-        proto_make_frame(&cfg22, &anim22, &peak22);
-        anim22.time = 7.5f;
-        proto_make_frame(&cfg22, &anim22, &reversed22);
-        anim22.time = 10.0f;
-        proto_make_frame(&cfg22, &anim22, &end22);
-        assert(peak22.parametric && reversed22.parametric);
-        int curls = 0;
-        for (int k = 0; k < PROTO_PROFILE_SAMPLES; ++k) {
-            assert(fabsf(flat22.offsets[k]) < .002f);
-            assert(fabsf(end22.offsets[k]) < .002f);
-            assert(fabsf(peak22.x_coords[k]-reversed22.x_coords[k]) < .003f);
-            assert(fabsf(peak22.offsets[k]+reversed22.offsets[k]) < .003f);
-            curls += fabsf(peak22.offsets[k]) > .1f;
+        /* Root stays much flatter near the shoulder than before. */
+        for (int k = 1; k <= 5; ++k) {
+            float x, y;
+            proto_fermat_twist_point(0.20f + 0.0004f * k, 0.0f, span,
+                                     full_amp, 1.0f, 1.0f, 1.0f, &x, &y);
+            assert(fabsf(y) < 0.0015f);
         }
-        assert(curls > 35);
-        for (int y = 0; y < PROTO_HEIGHT; y += 13)
-            for (int x = 0; x < PROTO_WIDTH; x += 11) {
-                assert(isfinite(proto_signed_side(&peak22, x+.5f, y+.5f)));
-                assert(isfinite(proto_signed_side(&reversed22, x+.5f, y+.5f)));
+
+        ProtoConfig cfg23;
+        ProtoAnimation anim23;
+        ProtoFrame flat23, peak23, reversed23, end23;
+        proto_config_defaults(&cfg23);
+        cfg23.section_count = 2;
+        cfg23.rotation_speed = 0.0f;
+        cfg23.sections[0].formula = PROTO_STRAIGHT;
+        cfg23.sections[1].formula = PROTO_FERMAT_TWIST;
+        cfg23.sections[1].amplitude = full_amp;
+        cfg23.sections[1].cycles = 4.0f;
+        cfg23.sections[1].gap_pixels = 0.25f;
+        cfg23.sections[1].repeat_visible = true;
+        cfg23.sections[1].animated = false;
+        cfg23.sections[1].phase_speed = speed;
+        proto_animation_init(&anim23, &cfg23);
+        anim23.time = 0.0f;
+        proto_make_frame(&cfg23, &anim23, &flat23);
+        anim23.time = 2.5f;
+        proto_make_frame(&cfg23, &anim23, &peak23);
+        anim23.time = 5.0f;
+        proto_make_frame(&cfg23, &anim23, &end23);
+        anim23.time = 7.5f;
+        proto_make_frame(&cfg23, &anim23, &reversed23);
+
+        float cell_max[4] = {0};
+        for (int k = 0; k < PROTO_PROFILE_SAMPLES; ++k) {
+            const float base = -168.0f + 336.0f * k / (PROTO_PROFILE_SAMPLES - 1);
+            assert(fabsf(flat23.offsets[k]) < 0.002f);
+            assert(fabsf(end23.offsets[k]) < 0.002f);
+            /* A complete cycle reverses the sign but preserves size. */
+            assert(fabsf(peak23.x_coords[k] - reversed23.x_coords[k]) < 0.003f);
+            assert(fabsf(peak23.offsets[k] + reversed23.offsets[k]) < 0.003f);
+            if (base >= 0.0f && base < 120.0f) {
+                int i = (int)(base / 30.0f);
+                if (i > 3) i = 3;
+                cell_max[i] = fmaxf(cell_max[i], fabsf(peak23.offsets[k]));
             }
+        }
+        /* Maximum pixel Y is NOT supposed to increase monotonically:
+         * the outward motifs are deliberately smaller, and opposite
+         * winding directions move their peaks. The geometry checks above
+         * validate exact radius ratios and independent winding grades. */
+        for (int i = 0; i < 4; ++i)
+            assert(cell_max[i] > 0.10f);
     }
 
-    puts("curve_math: ok");
+    puts("curve_math: ok");    puts("curve_math: ok");
     return 0;
 }

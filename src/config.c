@@ -292,6 +292,9 @@ static bool section_json(const Json *j, int idx, ProtoSection *s) {
             bit = 256;
             if (j->tokens[value].kind != T_TRUE && j->tokens[value].kind != T_FALSE) return false;
             s->repeat_visible = j->tokens[value].kind == T_TRUE;
+        } else if (key_is(j, key, "ribbon_width")) {
+            bit = 1024;
+            if (!scalar(j, value, &s->ribbon_width, 0.5f, 12.0f)) return false;
         } else if (key_is(j, key, "spiral_scale")) {
             bit = 512;
             if (!scalar(j, value, &s->spiral_scale, 0.35f, 1.0f)) return false;
@@ -496,6 +499,8 @@ bool proto_config_save(const char *path, const ProtoConfig *config, char *error,
                              s->gap_pixels, s->repeat_visible ? "true" : "false") >= 0;
         if (ok) ok = fprintf(file, ", \"spiral_scale\": %.3f",
                           s->spiral_scale > 0.0f ? s->spiral_scale : 1.0f) >= 0;
+        if (ok) ok = fprintf(file, ", \"ribbon_width\": %.3f",
+                             s->ribbon_width > 0.0f ? s->ribbon_width : 7.0f) >= 0;
         if (ok && s->animated) {
             ok = fprintf(file, ", \"animated\": true") >= 0;
             if (ok && s->loop) ok = fprintf(file, ", \"loop\": true") >= 0;
