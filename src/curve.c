@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "fermat_tall", "metroid_eight", "fermat_round", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "fermat_tall", "metroid_eight", "fermat_round", "fermat_diagonal", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -357,7 +357,8 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
                         float pulse_age, float *x, float *y) {
     *x = baseline;
     *y = 0.0f;
-    if (u < 0.0f || u > 1.0f) return;
+    /* Patch 0032: permit diagonal curls to continue off-screen. */
+    if ((u < 0.0f || u > 1.0f) && s->formula != PROTO_FERMAT_DIAGONAL) return;
     if (s->formula == PROTO_WOLFRAM_RIBBON ||
         s->formula == PROTO_WOLFRAM_DOUBLE_RIBBON ||
         s->formula == PROTO_PINCHED_ROPE) return; /* Straight parent divider; tube is a filled mask. */
@@ -381,14 +382,40 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
         const float join = smoothstep(tlocal/0.14f) *
                            smoothstep((1.0f-tlocal)/0.14f);
         const float scale = 0.25f*exp2f(2.0f*(float)outward_index/7.0f);
-        const float growth = proto_fermat_bothways_progress(t, s->phase_speed,
-                                                              outward_index, 0.2f);
+        const float growth = s->stagger_delay > 0.0f ?
+            proto_fermat_offset_progress(t,s->phase_speed,outward_index,
+                                          s->stagger_delay) :
+            proto_fermat_bothways_progress(t,s->phase_speed,outward_index,0.2f);
         const float pulse = pulse_age >= 0.0f && pulse_age < 0.24f ?
                             sinf(PROTO_PI*pulse_age/0.24f) : 0.0f;
         /* The quick sine component is already present in the supplied plot. */
         *y = s->amplitude * scale * growth * join *
              (signal * (1.0f+1.6f*pulse) +
               0.11f*pulse*sinf(50.0f*signal_x+8.0f*PROTO_PI*pulse_age/0.24f));
+        return;
+    }
+    if (s->formula == PROTO_FERMAT_DIAGONAL) {
+        /* Fixed diagonal, never per-angle visible extent, with 4 candidate
+         * root distributions and no oval/anisotropic transformations. */
+        if (s->cycles < 7.5f || s->cycles > 8.5f) return;
+        const float delay = s->stagger_delay > 0.0f ? s->stagger_delay : .4f;
+        for (int i = 0; i < 8; ++i) {
+            float begin, length;
+            proto_fermat_diagonal_cell(start,span,s->spiral_layout,i,
+                                       s->amplitude,&begin,&length);
+            if (baseline < begin-0.0002f || baseline > begin+length+0.0002f)
+                continue;
+            const float p = fminf(1.0f,fmaxf(0.0f,(baseline-begin)/length));
+            const float growth=proto_fermat_offset_progress(t,s->phase_speed,i,delay);
+            const float shifted_time=t-delay*(float)i;
+            const float direction=proto_fermat_twist_direction(shifted_time,
+                s->phase_speed)*((i&1)?-1.0f:1.0f);
+            const float winding=.25f+.75f*(float)i/7.0f;
+            proto_fermat_diagonal_point(p,begin,length,growth,winding,direction,x,y);
+            if (pulse_age>=0.0f && pulse_age<0.24f)
+                proto_fermat_impulse(x,y,begin,length,p,pulse_age);
+            return;
+        }
         return;
     }
     if (s->formula == PROTO_FERMAT_ROUND) {
@@ -625,8 +652,15 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
         const ProtoSection *section = &config->sections[index];
         float start = section_start, span = section_span;
         if (count == 2 && section->repeat_visible) {
-            start = index == 0 ? -visible : 0.0f;
-            span = visible;
+            /* Screen-diagonal coordinates do not slide as the line rotates.
+             * Keep legacy angle-aware profiles unchanged. */
+            const float fixed_half_diagonal =
+                0.5f*hypotf((float)PROTO_WIDTH,(float)PROTO_HEIGHT);
+            const float extent = section->formula == PROTO_FERMAT_DIAGONAL ||
+                                 section->formula == PROTO_METROID_EIGHT ?
+                                 fixed_half_diagonal : visible;
+            start = index == 0 ? -extent : 0.0f;
+            span = extent;
         }
         const float u = (base - start) / span;
         ProtoSection next = *section;
@@ -692,6 +726,9 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
             frame->parametric = true;
     for (int side = 0; side < config->section_count; ++side)
         if (config->sections[side].formula == PROTO_FERMAT_ROUND)
+            frame->parametric = true;
+    for (int side = 0; side < config->section_count; ++side)
+        if (config->sections[side].formula == PROTO_FERMAT_DIAGONAL)
             frame->parametric = true;
     if (frame->parametric) proto_parametric_prepare(frame);
     proto_wolfram_ribbon_prepare(frame, config, animation);

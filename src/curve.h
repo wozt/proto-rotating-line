@@ -38,6 +38,7 @@ typedef enum {
     PROTO_FERMAT_TALL,
     PROTO_METROID_EIGHT,
     PROTO_FERMAT_ROUND,
+    PROTO_FERMAT_DIAGONAL,
     PROTO_CUSTOM,
     PROTO_FORMULA_COUNT
 } ProtoFormula;
@@ -68,6 +69,8 @@ typedef struct {
     float cycles;        /* Repetitions within one section. */
     float phase_speed;   /* Cycles per second, signed. */
     float ribbon_width; /* Full tentacle width in logical pixels. */
+    int spiral_layout; /* Patch 0032: 1=A, 2=B, 3=C, 4=D */
+    float stagger_delay; /* Seconds between adjacent shapes. */
     float spiral_scale; /* 0=legacy 1.0, or 0.35..1.0 */
     float gap_pixels;    /* Flat gap between motifs, 0..5 logical px. */
     bool repeat_visible; /* Eight motifs span the visible half-line when selected. */

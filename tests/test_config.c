@@ -360,6 +360,28 @@ int main(void) {
         remove(path);
     }
 #endif
+#if defined(PROTO_DIAGONAL_A_CFG) && defined(PROTO_DIAGONAL_B_CFG) && \
+    defined(PROTO_DIAGONAL_C_CFG) && defined(PROTO_DIAGONAL_D_CFG)
+    {
+        const char *files32[4]={PROTO_DIAGONAL_A_CFG,PROTO_DIAGONAL_B_CFG,
+                                 PROTO_DIAGONAL_C_CFG,PROTO_DIAGONAL_D_CFG};
+        for(int i=0;i<4;++i) {
+            ProtoConfig variant32,roundtrip32;
+            proto_config_defaults(&variant32);
+            assert(proto_config_load(files32[i],&variant32,error,sizeof error));
+            assert(variant32.sections[1].formula==PROTO_FERMAT_DIAGONAL);
+            assert(variant32.sections[1].spiral_layout==i+1);
+            assert(fabsf(variant32.sections[1].stagger_delay-.4f)<.00001f);
+            assert(fabsf(variant32.sections[0].stagger_delay-.4f)<.00001f);
+            assert(proto_config_save(path,&variant32,error,sizeof error));
+            proto_config_defaults(&roundtrip32);
+            assert(proto_config_load(path,&roundtrip32,error,sizeof error));
+            assert(roundtrip32.sections[1].spiral_layout==i+1);
+            assert(fabsf(roundtrip32.sections[1].stagger_delay-.4f)<.00001f);
+            remove(path);
+        }
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

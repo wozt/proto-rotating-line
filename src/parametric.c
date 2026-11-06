@@ -819,6 +819,67 @@ void proto_fermat_round_point(float p, float packed_start, float packed_span,
     *y = old_y*ratio;
 }
 
+/* Patch 0032: four 2D-round patterns on an angle-invariant half diagonal.
+ * Only the first fifth of the final (80px high) spiral lies along the
+ * visible diagonal at corner alignment; the remainder extends beyond. */
+void proto_fermat_diagonal_cell(float start, float span, int layout,
+                               int index, float amplitude,
+                               float *cell_start, float *cell_span) {
+    static const float weights[4][7] = {
+        {3.0f,4.8f,7.6f,12.2f,19.5f,31.2f,50.0f},
+        {6.0f,6.9f,8.9f,12.4f,18.4f,28.7f,46.9f},
+        {8.4f,8.8f,10.1f,12.7f,17.6f,26.6f,44.0f},
+        {11.6f,11.7f,12.2f,13.5f,16.7f,23.5f,39.2f}
+    };
+    if (layout < 1 || layout > 4) layout = 3;
+    if (index < 0) index = 0;
+    if (index > 7) index = 7;
+    const float ref = proto_fermat_tall_reference_peak(7);
+    const float outer = 80.0f * fmaxf(0.0f, amplitude)/15.0f / fmaxf(ref,0.01f);
+    const float first_span = fmaxf(0.0f, span - 0.20f*outer);
+    float sum = 0.0f, before = 0.0f, after = 0.0f;
+    for (int i = 0; i < 7; ++i) {
+        sum += weights[layout-1][i];
+        if (i < index) before += weights[layout-1][i];
+        if (i <= index) after += weights[layout-1][i];
+    }
+    if (index == 7) {
+        *cell_start = start + first_span;
+        *cell_span = outer;
+    } else {
+        const float left = start + first_span * before/sum;
+        const float right = index == 6 ? start + first_span :
+                            start + first_span * after/sum;
+        *cell_start = left;
+        *cell_span = right-left;
+    }
+}
+
+/* Reparameterizing a curve changes when it is traversed, NOT its shape.
+ * Shorten its flat root connectors to 4% so the outer giant curl genuinely
+ * appears in the first 20% of its axis instead of showing only a straight
+ * connector, as it would with the previous 20%-long root. */
+void proto_fermat_diagonal_point(float p,float cell_start,float cell_span,
+                                 float progress,float winding,float direction,
+                                 float *x,float *y) {
+    p = fmaxf(0.0f, fminf(1.0f, p));
+    const float q = p < 0.04f ? 5.0f*p :
+                    p > 0.96f ? 0.80f+5.0f*(p-0.96f) :
+                    0.20f+(p-0.04f)*(.60f/.92f);
+    proto_fermat_twist_point(q,cell_start,cell_span,.5f*cell_span,
+                             progress,winding,direction,x,y);
+}
+
+/* A genuine 0.4s stagger: each shape completes its own 5-second cycle,
+ * with phase and direction offset. The first eight-element wave ends at
+ * 5 + 7*0.4 = 7.8s. Earlier cells may start a new wave meanwhile. */
+float proto_fermat_offset_progress(float time,float speed,int index,float delay) {
+    if (speed == 0.0f) return 1.0f;
+    const float offset = fmaxf(0.0f,delay)*(float)index;
+    if (time <= offset) return 0.0f;
+    return proto_fermat_twist_progress(time-offset,speed);
+}
+
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES - 1; ++i) {

@@ -1322,5 +1322,67 @@ int main(void) {
         assert(fabsf(ax-bx)<.001f && fabsf(ay+by)<.001f);
     }
 
+    /* Patch 0032: 4 angle-independent layouts, 20%-visible last cell. */
+    {
+        const float halfdiag=0.5f*hypotf((float)PROTO_WIDTH,(float)PROTO_HEIGHT);
+        const float largest=80.0f/proto_fermat_tall_reference_peak(7);
+        assert(largest>80.0f && largest<135.0f);
+        for(int v=1;v<=4;++v) {
+            float lastend=0.0f,smallest=0.0f;
+            for(int i=0;i<8;++i) {
+                float left,width;
+                proto_fermat_diagonal_cell(0,halfdiag,v,i,15.0f,&left,&width);
+                if(i) assert(fabsf(left-lastend)<.0002f);
+                if(i==0) smallest=width;
+                if(i==7) {
+                    assert(width>smallest*1.5f);
+                    assert(fabsf((halfdiag-left)/width-.20f)<.0002f);
+                    assert(fabsf(width-largest)<.002f);
+                    assert(fabsf(2*.5f*width*proto_fermat_tall_reference_peak(i)-80.0f)<.02f);
+                }
+                assert(width>0.0f);
+                float x0,y0,x1,y1;
+                proto_fermat_diagonal_point(0,left,width,1,1,1,&x0,&y0);
+                proto_fermat_diagonal_point(1,left,width,1,1,1,&x1,&y1);
+                assert(fabsf(x0-left)<.001f && fabsf(y0)<.001f);
+                assert(fabsf(x1-(left+width))<.001f && fabsf(y1)<.001f);
+                lastend=left+width;
+            }
+        }
+        /* Real stagger, not the old 2.25s clamp: 7*0.4 = 2.8 seconds. */
+        assert(proto_fermat_offset_progress(2.5f,.2f,7,.4f)==0.0f);
+        assert(proto_fermat_offset_progress(2.8f,.2f,7,.4f)==0.0f);
+        assert(fabsf(proto_fermat_offset_progress(5.3f,.2f,7,.4f)-1.0f)<.0001f);
+        assert(fabsf(proto_fermat_offset_progress(7.8f,.2f,7,.4f))<.0001f);
+        ProtoConfig cfg32; ProtoAnimation ani32;
+        proto_config_defaults(&cfg32);
+        cfg32.section_count=2; cfg32.rotation_speed=0;
+        cfg32.sections[0].formula=PROTO_METROID_EIGHT;
+        cfg32.sections[0].phase_speed=.2f; cfg32.sections[0].stagger_delay=.4f;
+        cfg32.sections[1].formula=PROTO_FERMAT_DIAGONAL;
+        cfg32.sections[1].cycles=8; cfg32.sections[1].phase_speed=.2f;
+        cfg32.sections[1].amplitude=15; cfg32.sections[1].stagger_delay=.4f;
+        cfg32.sections[1].repeat_visible=true;
+        cfg32.sections[0].repeat_visible=true;
+        proto_animation_init(&ani32,&cfg32);
+        ProtoFrame a32,b32;
+        ani32.time=2.5f; ani32.rotation_degrees=0;
+        proto_make_frame(&cfg32,&ani32,&a32);
+        ani32.rotation_degrees=60;
+        proto_make_frame(&cfg32,&ani32,&b32);
+        /* Section geometry remains anchored to fixed baseline coordinates;
+         * one can sample outside the spiral region to verify the same shape
+         * and equal x/y coordinates before global rotation. */
+        assert(a32.parametric && b32.parametric);
+        for(int k=0;k<PROTO_PROFILE_SAMPLES;++k) {
+            assert(isfinite(a32.x_coords[k]) && isfinite(a32.offsets[k]));
+            assert(fabsf(a32.x_coords[k]-b32.x_coords[k])<.005f);
+            assert(fabsf(a32.offsets[k]-b32.offsets[k])<.005f);
+        }
+        const float w0=proto_fermat_offset_progress(1.0f,.2f,0,.4f);
+        const float w7=proto_fermat_offset_progress(1.0f,.2f,7,.4f);
+        assert(w0>0.0f && w7==0.0f);
+    }
+
     return 0;
 }

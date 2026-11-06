@@ -298,6 +298,17 @@ static bool section_json(const Json *j, int idx, ProtoSection *s) {
         } else if (key_is(j, key, "spiral_scale")) {
             bit = 512;
             if (!scalar(j, value, &s->spiral_scale, 0.35f, 1.0f)) return false;
+        } else if (key_is(j, key, "spiral_layout")) {
+            bit = 2048;
+            float value32 = 0.0f;
+            if (!scalar(j, value, &value32, 1.0f, 4.0f) ||
+                (float)(int)value32 != value32 || (seen & bit)) return false;
+            s->spiral_layout = (int)value32;
+            seen |= bit;
+        } else if (key_is(j, key, "stagger_delay")) {
+            bit = 4096;
+            if ((seen & bit) || !scalar(j, value, &s->stagger_delay, 0.0f, 2.0f)) return false;
+            seen |= bit;
         } else if (key_is(j, key, "animated")) {
             bit = 16;
             s->animated = j->tokens[value].kind == T_TRUE;
@@ -501,6 +512,10 @@ bool proto_config_save(const char *path, const ProtoConfig *config, char *error,
                           s->spiral_scale > 0.0f ? s->spiral_scale : 1.0f) >= 0;
         if (ok) ok = fprintf(file, ", \"ribbon_width\": %.3f",
                              s->ribbon_width > 0.0f ? s->ribbon_width : 7.0f) >= 0;
+        if (ok && s->spiral_layout > 0)
+            ok = fprintf(file, ", \"spiral_layout\": %d", s->spiral_layout) >= 0;
+        if (ok && s->stagger_delay > 0.0f)
+            ok = fprintf(file, ", \"stagger_delay\": %.3f", s->stagger_delay) >= 0;
         if (ok && s->animated) {
             ok = fprintf(file, ", \"animated\": true") >= 0;
             if (ok && s->loop) ok = fprintf(file, ", \"loop\": true") >= 0;

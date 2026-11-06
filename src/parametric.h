@@ -49,6 +49,12 @@ void proto_fermat_round_point(float p, float packed_start, float packed_span,
                               float section_start, float section_span,
                               int index, float amplitude, float progress,
                               float direction, float *x, float *y);
+void proto_fermat_diagonal_cell(float start,float span,int layout,int index,
+                                 float amplitude,float *cell_start,float *cell_span);
+void proto_fermat_diagonal_point(float p,float cell_start,float cell_span,
+                                  float progress,float winding,float direction,
+                                  float *x,float *y);
+float proto_fermat_offset_progress(float time,float speed,int index,float delay);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif
