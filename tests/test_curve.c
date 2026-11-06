@@ -486,6 +486,283 @@ int main(void) {
             for (int x0 = 0; x0 < PROTO_WIDTH; x0 += 9)
                 assert(isfinite(proto_signed_side(&test_frame, x0 + .5f, y0 + .5f)));
     }
+    /* Patch 0015: moving t-bound and a second offset strand. */
+    {
+        ProtoFormula selected;
+        assert(proto_parse_formula("wolfram_tentacle", &selected));
+        assert(selected == PROTO_WOLFRAM_TENTACLE);
+        const float span = 28.0f, radius = 6.0f, offset = 1.08f;
+        float x, y, a_x, a_y, b_x, b_y;
+        for (int k = 0; k <= 100; ++k) {
+            const float p = (float)k / 100.0f;
+            proto_wolfram_tentacle_point(p, 3.0f, span, radius,
+                                         0.0f, offset, &x, &y);
+            assert(fabsf(x - (3.0f + p * span)) < 0.0001f);
+            assert(fabsf(y) < 0.0001f);
+        }
+        proto_wolfram_tentacle_point(0.0f, 0, span, radius, 0.5f, offset, &x, &y);
+        assert(fabsf(x) < 0.0001f && fabsf(y) < 0.0001f);
+        proto_wolfram_tentacle_point(1.0f, 0, span, radius, 0.5f, offset, &x, &y);
+        assert(fabsf(x - span) < 0.0001f && fabsf(y) < 0.0001f);
+        /* Both strands reach the same moving tip, without a gap. */
+        proto_wolfram_tentacle_point(0.5f, 0, span, radius, 0.25f,
+                                     offset, &a_x, &a_y);
+        const float tip_y = radius * 0.75f * 0.75f * sinf(1.5f * 3.14159265358979323846f);
+        assert(fabsf(a_x - span * 0.5f) < 0.002f);
+        assert(fabsf(a_y - tip_y) < 0.002f);
+        proto_wolfram_tentacle_point(0.50001f, 0, span, radius, 0.25f,
+                                     offset, &b_x, &b_y);
+        assert(hypotf(b_x - a_x, b_y - a_y) < 0.01f);
+        /* At full extension, the moving tip is t=0.5 on Wolfram's arc. */
+        proto_wolfram_tentacle_point(0.5f, 0, span, radius, 0.5f,
+                                     offset, &x, &y);
+        assert(fabsf(x - (span * 0.5f - 0.25f * radius)) < 0.002f);
+        assert(fabsf(y) < 0.002f);
+        /* Two separate strands at their outer base. */
+        proto_wolfram_tentacle_point(0.12f, 0, span, radius, 0.5f,
+                                     offset, &a_x, &a_y);
+        proto_wolfram_tentacle_point(0.88f, 0, span, radius, 0.5f,
+                                     offset, &b_x, &b_y);
+        assert(hypotf(a_x - b_x, a_y - b_y) > 0.35f);
+        /* Repeated line follows exactly the same 0->0.5->0 clock. */
+        ProtoConfig cfg15;
+        ProtoAnimation anim15;
+        ProtoFrame flat, middle, peak, return_frame;
+        proto_config_defaults(&cfg15);
+        cfg15.section_count = 2;
+        cfg15.sections[0].formula = PROTO_STRAIGHT;
+        cfg15.sections[1].formula = PROTO_WOLFRAM_TENTACLE;
+        cfg15.sections[1].amplitude = 8.0f;
+        cfg15.sections[1].cycles = 4.0f;
+        cfg15.sections[1].gap_pixels = 0.35f;
+        cfg15.sections[1].repeat_visible = true;
+        cfg15.sections[1].phase_speed = 1.0f / 18.0f;
+        cfg15.sections[1].animated = false;
+        proto_animation_init(&anim15, &cfg15);
+        anim15.time = 0.0f;
+        proto_make_frame(&cfg15, &anim15, &flat);
+        anim15.time = 4.5f;
+        proto_make_frame(&cfg15, &anim15, &middle);
+        anim15.time = 9.0f;
+        proto_make_frame(&cfg15, &anim15, &peak);
+        anim15.time = 13.5f;
+        proto_make_frame(&cfg15, &anim15, &return_frame);
+        assert(peak.parametric);
+        bool visible = false;
+        for (int k = 1; k < PROTO_PROFILE_SAMPLES; ++k) {
+            assert(fabsf(flat.offsets[k]) < 0.002f);
+            if (fabsf(peak.offsets[k]) > 1.0f) visible = true;
+            assert(fabsf(middle.offsets[k] - return_frame.offsets[k]) < 0.002f);
+            assert(fabsf(middle.x_coords[k] - return_frame.x_coords[k]) < 0.002f);
+        }
+        assert(visible);
+        for (int iy = 0; iy < PROTO_HEIGHT; iy += 9)
+            for (int ix = 0; ix < PROTO_WIDTH; ix += 9)
+                assert(isfinite(proto_signed_side(&peak, ix + 0.5f, iy + 0.5f)));
+    }
+    /* Patch 0016: a *filled*, tapered ribbon, not two crossing strokes. */
+    {
+        ProtoFormula selected;
+        assert(proto_parse_formula("wolfram_ribbon", &selected));
+        assert(selected == PROTO_WOLFRAM_RIBBON);
+        ProtoConfig cfg16;
+        ProtoAnimation anim16;
+        ProtoFrame flat, peak, mid, back;
+        proto_config_defaults(&cfg16);
+        cfg16.section_count = 2;
+        cfg16.rotation_speed = 0.0f;
+        cfg16.sections[0].formula = PROTO_STRAIGHT;
+        cfg16.sections[1].formula = PROTO_WOLFRAM_RIBBON;
+        cfg16.sections[1].amplitude = 8.0f;
+        cfg16.sections[1].ribbon_width = 7.5f;
+        cfg16.sections[1].cycles = 4.0f;
+        cfg16.sections[1].repeat_visible = true;
+        cfg16.sections[1].gap_pixels = 0.35f;
+        cfg16.sections[1].phase_speed = 1.0f/18.0f;
+        cfg16.sections[1].animated = false;
+        proto_animation_init(&anim16, &cfg16);
+        anim16.time = 0.0f;
+        proto_make_frame(&cfg16, &anim16, &flat);
+        anim16.time = 9.0f;
+        proto_make_frame(&cfg16, &anim16, &peak);
+        anim16.time = 4.5f;
+        proto_make_frame(&cfg16, &anim16, &mid);
+        anim16.time = 13.5f;
+        proto_make_frame(&cfg16, &anim16, &back);
+        int nflat=0, npeak=0, nmid=0, nback=0, upper=0;
+        for (int y=0; y<PROTO_HEIGHT; ++y) {
+            for (int x=0; x<PROTO_WIDTH; ++x) {
+                int k=y*PROTO_WIDTH+x;
+                nflat+=flat.ribbon_mask[k]!=0;
+                npeak+=peak.ribbon_mask[k]!=0;
+                nmid+=mid.ribbon_mask[k]!=0;
+                nback+=back.ribbon_mask[k]!=0;
+                if (peak.ribbon_mask[k] && y<PROTO_HEIGHT/2 && x>PROTO_WIDTH/2) {
+                    ++upper;
+                    assert(proto_signed_side(&peak, x+0.5f, y+0.5f)>=0.0f);
+                }
+            }
+        }
+        assert(nflat==0);
+        assert(npeak>200 && upper>8);
+        assert(nmid>0 && nback>0);
+        assert(abs(nmid-nback)<12);
+        /* Increasing width must increase the filled area. */
+        cfg16.sections[1].ribbon_width=11.0f;
+        proto_make_frame(&cfg16, &anim16, &flat); /* time=13.5 */
+        int thick=0;
+        for (int k=0; k<PROTO_WIDTH*PROTO_HEIGHT; ++k)
+            thick+=flat.ribbon_mask[k]!=0;
+        assert(thick>nback);
+        /* A 90-degree rotation should preserve an actual filled mask. */
+        anim16.rotation_degrees=90.0f;
+        proto_make_frame(&cfg16, &anim16, &flat);
+        int rotated=0;
+        for (int k=0; k<PROTO_WIDTH*PROTO_HEIGHT; ++k)
+            rotated+=flat.ribbon_mask[k]!=0;
+        assert(rotated>50);
+    }
+
+    /* Patch 0017: cyan and violet are actually distinct filled strands. */
+    {
+        ProtoFormula parsed;
+        assert(proto_parse_formula("wolfram_double_ribbon", &parsed));
+        assert(parsed == PROTO_WOLFRAM_DOUBLE_RIBBON);
+        ProtoConfig cfg17;
+        ProtoAnimation animation17;
+        ProtoFrame flat17, expanded17, midway17, returning17;
+        proto_config_defaults(&cfg17);
+        cfg17.section_count = 2;
+        cfg17.rotation_speed = 0.0f;
+        cfg17.show_divider = false;
+        cfg17.sections[0].formula = PROTO_STRAIGHT;
+        cfg17.sections[1].formula = PROTO_WOLFRAM_DOUBLE_RIBBON;
+        cfg17.sections[1].amplitude = 10.5f;
+        cfg17.sections[1].ribbon_width = 5.0f;
+        cfg17.sections[1].cycles = 4.0f;
+        cfg17.sections[1].gap_pixels = 0.35f;
+        cfg17.sections[1].repeat_visible = true;
+        cfg17.sections[1].phase_speed = 1.0f/18.0f;
+        cfg17.sections[1].animated = false;
+        proto_animation_init(&animation17, &cfg17);
+        animation17.time = 0.0f;
+        proto_make_frame(&cfg17, &animation17, &flat17);
+        animation17.time = 9.0f;
+        proto_make_frame(&cfg17, &animation17, &expanded17);
+        animation17.time = 4.5f;
+        proto_make_frame(&cfg17, &animation17, &midway17);
+        animation17.time = 13.5f;
+        proto_make_frame(&cfg17, &animation17, &returning17);
+        int flat_count = 0, cyan = 0, violet = 0, cross_cyan = 0, cross_violet = 0;
+        int cyan_cells[4] = {0}, violet_cells[4] = {0};
+        for (int y = 0; y < PROTO_HEIGHT; ++y) {
+            for (int x = 0; x < PROTO_WIDTH; ++x) {
+                const int k = y*PROTO_WIDTH+x;
+                flat_count += flat17.ribbon_mask[k] != 0;
+                if (expanded17.ribbon_mask[k] == 2) {
+                    cyan++;
+                    if (y < PROTO_HEIGHT/2) cross_cyan++;
+                    int n = (x-PROTO_WIDTH/2)/30;
+                    if (n>=0 && n<4) cyan_cells[n]++;
+                    assert(proto_signed_side(&expanded17, x+0.5f, y+0.5f) > 0.0f);
+                } else if (expanded17.ribbon_mask[k] == 3) {
+                    violet++;
+                    if (y > PROTO_HEIGHT/2) cross_violet++;
+                    int n = (x-PROTO_WIDTH/2)/30;
+                    if (n>=0 && n<4) violet_cells[n]++;
+                    assert(proto_signed_side(&expanded17, x+0.5f, y+0.5f) < 0.0f);
+                }
+                assert(midway17.ribbon_mask[k] == returning17.ribbon_mask[k]);
+            }
+        }
+        assert(flat_count == 0);
+        assert(cyan > 60 && violet > 60);
+        assert(cross_cyan > 0 && cross_violet > 0);
+        for (int i=0; i<4; ++i) assert(cyan_cells[i] > 2 && violet_cells[i] > 2);
+        /* The static original 0016 mode is preserved, still mask=1. */
+        cfg17.sections[1].formula = PROTO_WOLFRAM_RIBBON;
+        proto_make_frame(&cfg17, &animation17, &flat17);
+        int legacy = 0;
+        for (int i=0; i<PROTO_WIDTH*PROTO_HEIGHT; ++i) {
+            assert(flat17.ribbon_mask[i] != 2 && flat17.ribbon_mask[i] != 3);
+            if (flat17.ribbon_mask[i] == 1) ++legacy;
+        }
+        assert(legacy > 20);
+    }
+
+    /* Patch 0019: genuine two-arm Fermat, continuous joins and 18s cycle. */
+    {
+        ProtoFormula parsed;
+        assert(proto_parse_formula("fermat_spiral", &parsed));
+        assert(parsed == PROTO_FERMAT_SPIRAL);
+        const float start = 3.0f, span = 30.0f, amp = 11.0f;
+        const float centre = start + 0.5f*span;
+        float x, y, xother, yother;
+        proto_fermat_spiral_point(0.0f, start, span, amp, 1.0f, &x, &y);
+        assert(fabsf(x-start) < 0.0002f && fabsf(y) < 0.0002f);
+        proto_fermat_spiral_point(1.0f, start, span, amp, 1.0f, &x, &y);
+        assert(fabsf(x-(start+span)) < 0.0002f && fabsf(y) < 0.0002f);
+        proto_fermat_spiral_point(0.12f, start, span, amp, 1.0f, &x, &y);
+        assert(fabsf(x-(centre-amp)) < 0.0002f && fabsf(y) < 0.0002f);
+        proto_fermat_spiral_point(0.88f, start, span, amp, 1.0f, &x, &y);
+        assert(fabsf(x-(centre+amp)) < 0.0002f && fabsf(y) < 0.0002f);
+        for (int k=0; k<=100; ++k) {
+            float p = (float)k/100.0f;
+            proto_fermat_spiral_point(p, start, span, amp, 0.0f, &x, &y);
+            assert(isfinite(x) && fabsf(y) < 0.0002f);
+            proto_fermat_spiral_point(p, start, span, amp, 1.0f, &x, &y);
+            assert(isfinite(x) && isfinite(y));
+        }
+        for (int k=0; k<=40; ++k) {
+            float p = 0.12f+(0.38f*k/40.0f);
+            proto_fermat_spiral_point(p, start, span, amp, 0.65f, &x, &y);
+            proto_fermat_spiral_point(1.0f-p, start, span, amp, 0.65f,
+                                       &xother, &yother);
+            assert(fabsf(x+xother-2.0f*centre) < 0.0004f);
+            assert(fabsf(y+yother) < 0.0004f);
+        }
+        ProtoConfig fermat_cfg;
+        ProtoAnimation fermat_anim;
+        ProtoFrame at0, at9, at18, at45;
+        proto_config_defaults(&fermat_cfg);
+        fermat_cfg.section_count = 2;
+        fermat_cfg.sections[0].formula = PROTO_STRAIGHT;
+        fermat_cfg.sections[1].formula = PROTO_FERMAT_SPIRAL;
+        fermat_cfg.sections[1].amplitude = 11.0f;
+        fermat_cfg.sections[1].cycles = 4.0f;
+        fermat_cfg.sections[1].phase_speed = 1.0f/18.0f;
+        fermat_cfg.sections[1].repeat_visible = true;
+        fermat_cfg.sections[1].gap_pixels = 0.25f;
+        fermat_cfg.sections[1].animated = false;
+        proto_animation_init(&fermat_anim, &fermat_cfg);
+        fermat_anim.time = 0.0f;
+        proto_make_frame(&fermat_cfg, &fermat_anim, &at0);
+        fermat_anim.time = 9.0f;
+        proto_make_frame(&fermat_cfg, &fermat_anim, &at9);
+        fermat_anim.time = 18.0f;
+        proto_make_frame(&fermat_cfg, &fermat_anim, &at18);
+        fermat_anim.time = 4.5f;
+        proto_make_frame(&fermat_cfg, &fermat_anim, &at45);
+        assert(at9.parametric && at0.parametric);
+        float at9_max = 0.0f, at45_max = 0.0f;
+        for (int i=0; i<PROTO_PROFILE_SAMPLES; ++i) {
+            assert(fabsf(at0.offsets[i]) < 0.002f);
+            assert(fabsf(at18.offsets[i]) < 0.002f);
+            at9_max = fmaxf(at9_max, fabsf(at9.offsets[i]));
+            at45_max = fmaxf(at45_max, fabsf(at45.offsets[i]));
+        }
+        assert(at9_max > at45_max && at45_max > 1.0f);
+        int changed = 0;
+        for (int iy=38; iy<122; iy+=2)
+            for (int ix=120; ix<240; ix+=2) {
+                float flat = proto_signed_side(&at0, ix+0.5f, iy+0.5f);
+                float curl = proto_signed_side(&at9, ix+0.5f, iy+0.5f);
+                assert(isfinite(flat) && isfinite(curl));
+                changed += (flat < 0.0f) != (curl < 0.0f);
+            }
+        assert(changed > 20);
+    }
+
     puts("curve_math: ok");
     return 0;
 }

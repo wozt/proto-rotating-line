@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -338,13 +338,18 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
     *x = baseline;
     *y = 0.0f;
     if (u < 0.0f || u > 1.0f) return;
+    if (s->formula == PROTO_WOLFRAM_RIBBON ||
+        s->formula == PROTO_WOLFRAM_DOUBLE_RIBBON ||
+        s->formula == PROTO_PINCHED_ROPE) return; /* Straight parent divider; tube is a filled mask. */
     if (s->formula == PROTO_SPATIAL_WAVE ||
         s->formula == PROTO_SPATIAL_LIGHTNING) {
         spatial_gradient_point(s, baseline, u, start, span, t, x, y);
         return;
     }
-    bool repeated = s->formula == PROTO_SPIRAL ||
+    bool repeated = s->formula == PROTO_FERMAT_SPIRAL ||
+                    s->formula == PROTO_SPIRAL ||
                     s->formula == PROTO_WOLFRAM_HALFTURN ||
+                    s->formula == PROTO_WOLFRAM_TENTACLE ||
         ((s->repeat_visible || s->gap_pixels > 0.0f) &&
          (s->formula == PROTO_SINE || s->formula == PROTO_LIGHTNING ||
           s->formula == PROTO_TRIANGLE));
@@ -366,6 +371,22 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
     if (local <= start_local || local >= start_local + length) return;
     float p = (local - start_local) / length;
     float cell_start = start + index * cell + start_local;
+    if (s->formula == PROTO_WOLFRAM_TENTACLE) {
+        /* Animate the actual Wolfram parameter bound, not the shape scale. */
+        const float limit = s->phase_speed == 0.0f ? 0.5f :
+            0.25f * (1.0f - cosf(2.0f * PROTO_PI * s->phase_speed * t));
+        proto_wolfram_tentacle_point(p, cell_start, length, s->amplitude,
+                                     limit, 0.18f * s->amplitude, x, y);
+        return;
+    }
+    if (s->formula == PROTO_FERMAT_SPIRAL) {
+        /* 0 -> full 3*pi (9s) -> zero (18s). Static hold for speed=0. */
+        const float progress = s->phase_speed == 0.0f ? 1.0f :
+            0.5f - 0.5f * cosf(2.0f * PROTO_PI * s->phase_speed * t);
+        proto_fermat_spiral_point(p, cell_start, length,
+                                  s->amplitude, progress, x, y);
+        return;
+    }
     if (s->formula == PROTO_WOLFRAM_HALFTURN) {
         /* phase_speed=0: exact static arc. Otherwise breathe in/out. */
         const float strength = s->phase_speed == 0.0f ? 1.0f :
@@ -471,9 +492,14 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
      * parametric crossing classifier for the wave half-line. */
     for (int side = 0; side < config->section_count; ++side)
         if (config->sections[side].formula == PROTO_SPATIAL_WAVE ||
-            config->sections[side].formula == PROTO_WOLFRAM_HALFTURN)
+            config->sections[side].formula == PROTO_WOLFRAM_HALFTURN ||
+            config->sections[side].formula == PROTO_WOLFRAM_TENTACLE)
+            frame->parametric = true;
+    for (int side = 0; side < config->section_count; ++side)
+        if (config->sections[side].formula == PROTO_FERMAT_SPIRAL)
             frame->parametric = true;
     if (frame->parametric) proto_parametric_prepare(frame);
+    proto_wolfram_ribbon_prepare(frame, config, animation);
 }
 
 float proto_signed_side(const ProtoFrame *frame, float x, float y) {
@@ -481,6 +507,26 @@ float proto_signed_side(const ProtoFrame *frame, float x, float y) {
     const float dy = y - PROTO_HEIGHT * 0.5f;
     const float tangent = dx * frame->cos_angle + dy * frame->sin_angle;
     const float normal = -dx * frame->sin_angle + dy * frame->cos_angle;
+    /* A filled cyan ribbon overrides only the colour INSIDE its closed
+     * contour. Pixels near its edge return distance zero so the
+     * existing divider colour also outlines the spiral. */
+    const int ix = (int)floorf(x), iy = (int)floorf(y);
+    if (ix >= 0 && ix < PROTO_WIDTH && iy >= 0 && iy < PROTO_HEIGHT) {
+        const int idx = iy * PROTO_WIDTH + ix;
+        if (frame->ribbon_mask[idx] == 2) return 3.0f; /* cyan body */
+        if (frame->ribbon_mask[idx] == 3) return -3.0f; /* violet body */
+        if (frame->ribbon_mask[idx]) {
+            bool edge = ix == 0 || ix == PROTO_WIDTH-1 ||
+                        iy == 0 || iy == PROTO_HEIGHT-1;
+            if (!edge) {
+                edge = !frame->ribbon_mask[idx-1] ||
+                       !frame->ribbon_mask[idx+1] ||
+                       !frame->ribbon_mask[idx-PROTO_WIDTH] ||
+                       !frame->ribbon_mask[idx+PROTO_WIDTH];
+            }
+            return edge ? 0.0f : 3.0f; /* white outline / cyan body */
+        }
+    }
     if (frame->parametric) return proto_parametric_side(frame, tangent, normal);
     float position = clamp01((tangent + PROTO_HALF_SPAN) / (2.0f * PROTO_HALF_SPAN));
     float sample = position * (PROTO_PROFILE_SAMPLES - 1);

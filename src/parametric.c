@@ -113,6 +113,413 @@ void proto_wolfram_halfturn_point(float p, float cell_start,
     *y = strength * shape_y;
 }
 
+/* The Wolfram spiral, with an analytically derived unit normal for the
+ * second nearby strand. The centreline equation itself is not modified. */
+static void wolfram_tentacle_sample(float t, float *x, float *y,
+                                    float *nx, float *ny) {
+    const float radius = (1.0f - t) * (1.0f - t);
+    const float dr = -2.0f * (1.0f - t);
+    const float theta = 6.0f * PI * t;
+    const float cs = cosf(theta), sn = sinf(theta);
+    const float dx = dr * cs - 6.0f * PI * radius * sn;
+    const float dy = dr * sn + 6.0f * PI * radius * cs;
+    const float speed = sqrtf(dx * dx + dy * dy);
+    *x = radius * cs;
+    *y = radius * sn;
+    *nx = dy / speed;
+    *ny = -dx / speed;
+}
+
+/* Two near-parallel spirals form a continuous, pointed tentacle outline.
+ * From p=.12 to .50 the first strand samples Wolfram t=0..t_limit.
+ * From p=.50 to .88 the second strand samples t_limit..0 in reverse.
+ * Its normal offset is largest at the base and tends to zero at the tip,
+ * so both arms meet exactly at p=.50. The remaining span is a straight
+ * connector to the separator. A zero t_limit gives an exact flat line. */
+void proto_wolfram_tentacle_point(float p, float cell_start, float cell_span,
+                                  float amplitude, float t_limit,
+                                  float strand_offset, float *x, float *y) {
+    p = fmaxf(0.0f, fminf(1.0f, p));
+    t_limit = fmaxf(0.0f, fminf(0.5f, t_limit));
+    const float lead = 0.12f, tip = 0.50f, tail = 0.88f;
+    const float half_span = 0.5f * cell_span;
+    const float scale = fminf(fmaxf(0.0f, amplitude), 0.39f * cell_span);
+    const float offset = fminf(1.25f, fmaxf(0.0f, strand_offset));
+    const float blend = fminf(1.0f, t_limit / 0.045f);
+    const float fade = blend * blend * (3.0f - 2.0f * blend);
+    float sx = p * cell_span, sy = 0.0f;
+    float wx = 0.0f, wy = 0.0f, nx = 0.0f, ny = 0.0f;
+
+    if (p <= lead) {
+        sx = (half_span + scale) * p / lead;
+    } else if (p <= tip) {
+        const float q = (p - lead) / (tip - lead);
+        wolfram_tentacle_sample(q * t_limit, &wx, &wy, &nx, &ny);
+        sx = half_span + scale * wx;
+        sy = scale * wy;
+    } else if (p <= tail) {
+        const float q = (tail - p) / (tail - tip);
+        const float t = q * t_limit;
+        wolfram_tentacle_sample(t, &wx, &wy, &nx, &ny);
+        /* Width decreases continuously to zero at the moving inner tip. */
+        const float width = offset * powf(1.0f - q, 1.4f);
+        sx = half_span + scale * wx + width * nx;
+        sy = scale * wy + width * ny;
+    } else {
+        /* Continue from the second arm's base without any positional jump. */
+        wolfram_tentacle_sample(0.0f, &wx, &wy, &nx, &ny);
+        const float q = (p - tail) / (1.0f - tail);
+        const float start_x = half_span + scale + offset * nx;
+        const float start_y = offset * ny;
+        sx = start_x + (cell_span - start_x) * q;
+        sy = start_y * (1.0f - q);
+    }
+    const float baseline_x = p * cell_span;
+    *x = cell_start + baseline_x + fade * (sx - baseline_x);
+    *y = fade * sy;
+}
+
+/* A variable-radius capsule gives a closed, filled strip along one segment
+ * of the Wolfram centreline. Rasterizing the union of consecutive capsules
+ * avoids the self-intersecting polygon / even-odd artifacts of double spirals.
+ * Coordinates are pixel-centred, and all calculations are in logical pixels. */
+static void ribbon_capsule(ProtoFrame *frame,
+                           float ax, float ay, float ar,
+                           float bx, float by, float br,
+                           unsigned char ink) {
+    const float rmax = fmaxf(ar, br);
+    int xmin = (int)floorf(fminf(ax, bx) - rmax - 1.0f);
+    int xmax = (int)ceilf(fmaxf(ax, bx) + rmax + 1.0f);
+    int ymin = (int)floorf(fminf(ay, by) - rmax - 1.0f);
+    int ymax = (int)ceilf(fmaxf(ay, by) + rmax + 1.0f);
+    if (xmin < 0) xmin = 0;
+    if (ymin < 0) ymin = 0;
+    if (xmax >= PROTO_WIDTH) xmax = PROTO_WIDTH - 1;
+    if (ymax >= PROTO_HEIGHT) ymax = PROTO_HEIGHT - 1;
+    const float vx = bx - ax, vy = by - ay;
+    const float length2 = vx*vx + vy*vy;
+    for (int y = ymin; y <= ymax; ++y) {
+        const float py = (float)y + 0.5f;
+        for (int x = xmin; x <= xmax; ++x) {
+            const float px = (float)x + 0.5f;
+            float u = length2 > 1.0e-9f ?
+                ((px-ax)*vx + (py-ay)*vy) / length2 : 0.0f;
+            u = fmaxf(0.0f, fminf(1.0f, u));
+            const float rx = px - (ax + u*vx), ry = py - (ay + u*vy);
+            const float radius = ar + u * (br-ar);
+            if (rx*rx + ry*ry <= radius*radius)
+                frame->ribbon_mask[(size_t)y * PROTO_WIDTH + x] = ink;
+        }
+    }
+}
+
+/* Render one open spiral as a closed variable-width tube (round base cap,
+ * tapered point). Its centreline is precisely the input Wolfram equation.
+ * The centreline occupies t=0..t_limit, not the full .5 range at all times. */
+static void ribbon_cell(ProtoFrame *frame, float cell_start, float cell_span,
+                        float amplitude, float full_width, float t_limit) {
+    if (t_limit <= 0.00001f || full_width <= 0.0f) return;
+    const float scale = fminf(fmaxf(0.0f, amplitude), 0.39f * cell_span);
+    const float centre = cell_start + 0.5f * cell_span;
+    const float b = fminf(1.0f, t_limit / 0.045f);
+    const float fade = b*b*(3.0f-2.0f*b);
+    const float half_width = 0.5f * full_width * fade;
+    const int samples = 128;
+    float prev_x = 0.0f, prev_y = 0.0f, prev_r = 0.0f;
+    for (int k = 0; k <= samples; ++k) {
+        const float u = (float)k / (float)samples;
+        const float t = t_limit * u;
+        const float radius = (1.0f-t)*(1.0f-t);
+        const float angle = 6.0f * PI * t;
+        const float tangent = centre + scale * radius * cosf(angle);
+        const float normal = scale * radius * sinf(angle);
+        const float sx = PROTO_WIDTH * 0.5f +
+                         tangent * frame->cos_angle - normal * frame->sin_angle;
+        const float sy = PROTO_HEIGHT * 0.5f +
+                         tangent * frame->sin_angle + normal * frame->cos_angle;
+        const float width = half_width * powf(1.0f-u, 1.25f);
+        if (k > 0)
+            ribbon_capsule(frame, prev_x, prev_y, prev_r, sx, sy, width, 1);
+        prev_x = sx;
+        prev_y = sy;
+        prev_r = width;
+    }
+}
+
+/* Builds the filled cyan tentacle mask separately from the open world divider.
+ * The inside of the tube never changes colour when a curl overlaps another. */
+/* Two independent, genuinely coloured ribbons that coil around a common
+ * centre. They are opposite-phase arms, not a cyan spiral with a white edge.
+ * A short root ties the cyan arm to the cyan half and the violet arm to the
+ * violet half. Each arm tapers to the animated endpoint (not a fixed tip). */
+static void double_ribbon_point(float u, float t_limit, float centre,
+                                float scale, float side, float *x, float *y) {
+    const float t = t_limit * u;
+    const float radius = scale * (1.0f-t)*(1.0f-t);
+    const float angle = 6.0f * PI * t + side * (0.5f * PI);
+    *x = centre + radius * cosf(angle);
+    *y = radius * sinf(angle);
+}
+
+static void double_ribbon_world_to_screen(const ProtoFrame *frame,
+                                          float tx, float ty,
+                                          float *sx, float *sy) {
+    *sx = PROTO_WIDTH * 0.5f + tx * frame->cos_angle - ty * frame->sin_angle;
+    *sy = PROTO_HEIGHT * 0.5f + tx * frame->sin_angle + ty * frame->cos_angle;
+}
+
+static void double_ribbon_cell(ProtoFrame *frame, float cell_start,
+                               float cell_span, float amplitude,
+                               float ribbon_width, float t_limit) {
+    if (t_limit <= 0.00001f) return;
+    const float scale = fminf(fmaxf(amplitude, 0.0f), 0.35f * cell_span);
+    if (scale <= 0.0f) return;
+    const float centre = cell_start + 0.50f * cell_span;
+    const float opacity = fminf(1.0f, t_limit / 0.045f);
+    const float fade = opacity * opacity * (3.0f - 2.0f * opacity);
+    const float half_width = 0.5f * ribbon_width * fade;
+    const int segments = 96;
+    float prev_x[2], prev_y[2], prev_w[2];
+    float next_x[2], next_y[2], next_w[2];
+
+    for (int arm = 0; arm < 2; ++arm) {
+        const float side = arm == 0 ? +1.0f : -1.0f;
+        float tx, ty;
+        double_ribbon_point(0.0f, t_limit, centre, scale, side, &tx, &ty);
+        double_ribbon_world_to_screen(frame, tx, ty,
+                                       &prev_x[arm], &prev_y[arm]);
+        prev_w[arm] = half_width;
+        /* Attach each coloured ribbon to the matching side of the
+         * separating line. This root lies just inside its own half-plane. */
+        const float root_x = centre - 0.72f * scale;
+        const float root_y = side * 0.55f;
+        float sx, sy;
+        double_ribbon_world_to_screen(frame, root_x, root_y, &sx, &sy);
+        ribbon_capsule(frame, sx, sy, half_width * 0.55f,
+                       prev_x[arm], prev_y[arm], half_width,
+                       arm == 0 ? 2 : 3);
+    }
+
+    for (int k = 1; k <= segments; ++k) {
+        const float u = (float)k / (float)segments;
+        const float radius_factor = powf(1.0f-u, 1.15f);
+        for (int arm = 0; arm < 2; ++arm) {
+            float tx, ty;
+            const float side = arm == 0 ? +1.0f : -1.0f;
+            double_ribbon_point(u, t_limit, centre, scale, side, &tx, &ty);
+            double_ribbon_world_to_screen(frame, tx, ty,
+                                           &next_x[arm], &next_y[arm]);
+            next_w[arm] = half_width * radius_factor;
+        }
+        /* Change the foreground strand at each half-turn, creating a
+         * genuine over/under weave at intersections rather than one colour
+         * always obscuring the other. */
+        const int half_turn = (int)floorf(6.0f * t_limit * u);
+        const int first = (half_turn & 1) ? 0 : 1;
+        for (int pass = 0; pass < 2; ++pass) {
+            const int arm = pass == 0 ? first : 1-first;
+            ribbon_capsule(frame, prev_x[arm], prev_y[arm], prev_w[arm],
+                           next_x[arm], next_y[arm], next_w[arm],
+                           arm == 0 ? 2 : 3);
+        }
+        for (int arm = 0; arm < 2; ++arm) {
+            prev_x[arm] = next_x[arm];
+            prev_y[arm] = next_y[arm];
+            prev_w[arm] = next_w[arm];
+        }
+    }
+}
+
+/* Rope-like deformation: a straight segment is pinched at the middle and
+ * twisted, producing two mirrored semi-spirals around the pinch. Each colour
+ * is offset from the same rope centreline using the local normal, so the
+ * result reads as one twisted rope rather than two unrelated spirals. */
+static void pinched_rope_centre_point(float q, float twist, float centre,
+                                      float half_span, float amplitude,
+                                      float direction, float *x, float *y) {
+    const float advance = q * half_span;
+    const float envelope = twist * q * powf(fmaxf(0.0f, 1.0f - q), 1.10f);
+    const float radius = amplitude * 0.82f * envelope;
+    const float angle = direction * (1.05f * PI + 5.1f * PI * twist * q);
+    *x = centre + direction * advance + direction * radius * cosf(angle);
+    *y = radius * sinf(angle);
+}
+
+static void pinched_rope_world_to_screen(const ProtoFrame *frame,
+                                         float tx, float ty,
+                                         float *sx, float *sy) {
+    *sx = PROTO_WIDTH * 0.5f + tx * frame->cos_angle - ty * frame->sin_angle;
+    *sy = PROTO_HEIGHT * 0.5f + tx * frame->sin_angle + ty * frame->cos_angle;
+}
+
+static void pinched_rope_cell(ProtoFrame *frame, float cell_start,
+                              float cell_span, float amplitude,
+                              float ribbon_width, float t_limit) {
+    if (t_limit <= 0.00001f) return;
+    const float centre = cell_start + 0.5f * cell_span;
+    const float half_span = 0.5f * cell_span;
+    const float scale = fminf(fmaxf(amplitude, 0.0f), 0.24f * cell_span);
+    if (scale <= 0.0f) return;
+    const float fade = t_limit <= 0.045f ?
+        (t_limit / 0.045f) * (t_limit / 0.045f) * (3.0f - 2.0f * (t_limit / 0.045f)) : 1.0f;
+    const float base_width = 0.5f * ribbon_width * fade;
+    const int segments = 72;
+
+    for (int side = -1; side <= 1; side += 2) {
+        float prev_cx, prev_cy, prev_tx, prev_ty;
+        pinched_rope_centre_point(0.0f, t_limit, centre, half_span, scale,
+                                  (float)side, &prev_cx, &prev_cy);
+        pinched_rope_centre_point(1.0f/segments, t_limit, centre, half_span, scale,
+                                  (float)side, &prev_tx, &prev_ty);
+        float prev_dx = prev_tx - prev_cx;
+        float prev_dy = prev_ty - prev_cy;
+        float prev_len = hypotf(prev_dx, prev_dy);
+        if (prev_len < 1e-5f) { prev_dx = (float)side; prev_dy = 0.0f; prev_len = 1.0f; }
+        float prev_nx = -prev_dy / prev_len;
+        float prev_ny =  prev_dx / prev_len;
+        float prev_sep = base_width * (0.30f + 0.60f * (1.0f - 0.0f));
+        float prev_hw  = base_width * (0.35f + 0.65f * (1.0f - 0.0f));
+
+        float prev_ax, prev_ay, prev_bx, prev_by;
+        pinched_rope_world_to_screen(frame,
+                                     prev_cx + prev_nx * prev_sep,
+                                     prev_cy + prev_ny * prev_sep,
+                                     &prev_ax, &prev_ay);
+        pinched_rope_world_to_screen(frame,
+                                     prev_cx - prev_nx * prev_sep,
+                                     prev_cy - prev_ny * prev_sep,
+                                     &prev_bx, &prev_by);
+
+        for (int k = 1; k <= segments; ++k) {
+            const float q = (float)k / (float)segments;
+            float cx, cy;
+            pinched_rope_centre_point(q, t_limit, centre, half_span, scale,
+                                      (float)side, &cx, &cy);
+            float fx, fy;
+            if (k < segments) {
+                pinched_rope_centre_point((float)(k+1) / (float)segments, t_limit,
+                                          centre, half_span, scale, (float)side,
+                                          &fx, &fy);
+            } else {
+                fx = cx + (float)side;
+                fy = cy;
+            }
+            float dx = fx - cx;
+            float dy = fy - cy;
+            float len = hypotf(dx, dy);
+            if (len < 1e-5f) { dx = (float)side; dy = 0.0f; len = 1.0f; }
+            float nx = -dy / len;
+            float ny =  dx / len;
+
+            const float edge_falloff = powf(fmaxf(0.0f, 1.0f - q), 0.42f);
+            const float sep = base_width * (0.30f + 0.60f * edge_falloff);
+            const float hw  = base_width * (0.35f + 0.65f * edge_falloff);
+
+            float ax, ay, bx, by;
+            pinched_rope_world_to_screen(frame, cx + nx * sep, cy + ny * sep, &ax, &ay);
+            pinched_rope_world_to_screen(frame, cx - nx * sep, cy - ny * sep, &bx, &by);
+
+            const int weave = (int)floorf(4.0f * t_limit * q * 4.0f);
+            if (weave & 1) {
+                ribbon_capsule(frame, prev_bx, prev_by, prev_hw, bx, by, hw, 3);
+                ribbon_capsule(frame, prev_ax, prev_ay, prev_hw, ax, ay, hw, 2);
+            } else {
+                ribbon_capsule(frame, prev_ax, prev_ay, prev_hw, ax, ay, hw, 2);
+                ribbon_capsule(frame, prev_bx, prev_by, prev_hw, bx, by, hw, 3);
+            }
+            prev_ax = ax; prev_ay = ay;
+            prev_bx = bx; prev_by = by;
+            prev_hw = hw;
+        }
+    }
+}
+
+void proto_wolfram_ribbon_prepare(ProtoFrame *frame,
+                                   const ProtoConfig *config,
+                                   const ProtoAnimation *animation) {
+    memset(frame->ribbon_mask, 0, sizeof frame->ribbon_mask);
+    const int count = config->section_count;
+    const float visible = PROTO_WIDTH * 0.5f * fabsf(frame->cos_angle) +
+                          PROTO_HEIGHT * 0.5f * fabsf(frame->sin_angle);
+    for (int side = 0; side < count; ++side) {
+        const ProtoSection *section = &config->sections[side];
+        if (section->formula != PROTO_WOLFRAM_RIBBON &&
+            section->formula != PROTO_WOLFRAM_DOUBLE_RIBBON &&
+            section->formula != PROTO_PINCHED_ROPE) continue;
+        const float section_span = 2.0f*RANGE / count;
+        const float section_start = -RANGE + side*section_span;
+        float start = section_start, span = section_span;
+        if (count == 2 && section->repeat_visible) {
+            start = side == 0 ? -visible : 0.0f;
+            span = visible;
+        }
+        int cells = (int)lroundf(section->cycles);
+        if (cells < 1) cells = 1;
+        if (cells > 16) cells = 16;
+        const float cell = span / cells;
+        const float gap = fminf(fmaxf(0.0f, section->gap_pixels), 0.65f * cell);
+        const float width = section->ribbon_width > 0.0f ?
+            section->ribbon_width : 7.0f;
+        const float t_limit = section->phase_speed == 0.0f ? 0.5f :
+            0.25f*(1.0f-cosf(2.0f*PI*section->phase_speed*animation->time));
+        for (int i = 0; i < cells; ++i) {
+            const float cell_start = start+i*cell+0.5f*gap;
+            if (section->formula == PROTO_WOLFRAM_DOUBLE_RIBBON)
+                double_ribbon_cell(frame, cell_start, cell-gap,
+                                   section->amplitude, width, t_limit);
+            else if (section->formula == PROTO_PINCHED_ROPE)
+                pinched_rope_cell(frame, cell_start, cell-gap,
+                                  section->amplitude, width, t_limit);
+            else
+                ribbon_cell(frame, cell_start, cell-gap,
+                            section->amplitude, width, t_limit);
+        }
+    }
+}
+
+/* True two-arm Fermat spiral: polar r = +/- a*sqrt(theta).
+ * The growing theta_max simultaneously increases turns and outside radius.
+ * Rotating by -theta_max fixes both outer endpoints on the baseline: the
+ * complete path left edge -> negative arm -> centre -> positive arm ->
+ * right edge is continuous. No ribbons or white strokes are involved. */
+void proto_fermat_spiral_point(float p, float cell_start, float cell_span,
+                               float amplitude, float progress,
+                               float *x, float *y) {
+    p = fmaxf(0.0f, fminf(1.0f, p));
+    progress = fmaxf(0.0f, fminf(1.0f, progress));
+    const float centre = cell_start + 0.5f * cell_span;
+    const float full_theta = 3.0f * PI;
+    const float theta_max = full_theta * progress;
+    const float max_radius = fminf(fmaxf(0.0f, amplitude), 0.45f * cell_span);
+    const float outer_radius = max_radius * sqrtf(progress);
+    const float lead = 0.12f, trail = 0.88f;
+
+    *y = 0.0f;
+    if (p <= lead) {
+        *x = cell_start + (centre - outer_radius - cell_start) * (p / lead);
+        return;
+    }
+    if (p >= trail) {
+        const float u = (p-trail)/(1.0f-trail);
+        *x = centre + outer_radius +
+             (cell_start + cell_span - centre - outer_radius) * u;
+        return;
+    }
+
+    float theta, side;
+    if (p <= 0.5f) {
+        theta = theta_max * (0.5f-p)/(0.5f-lead);
+        side = -1.0f;
+    } else {
+        theta = theta_max * (p-0.5f)/(trail-0.5f);
+        side = 1.0f;
+    }
+    const float radius = max_radius * sqrtf(theta / full_theta);
+    const float phase = theta - theta_max;
+    *x = centre + side * radius * cosf(phase);
+    *y = side * radius * sinf(phase);
+}
+
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES - 1; ++i) {

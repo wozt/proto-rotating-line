@@ -11,6 +11,18 @@ void proto_tentacle_gradient_point(float u, float start, float span,
 void proto_wolfram_halfturn_point(float p, float cell_start,
                                   float cell_span, float radius,
                                   float strength, float *x, float *y);
+/* Two strands on the same Wolfram spiral, joined at the animated tip. */
+void proto_wolfram_tentacle_point(float p, float cell_start, float cell_span,
+                                  float amplitude, float t_limit,
+                                  float strand_offset, float *x, float *y);
+/* Rasterize closed, tapered Wolfram ribbons into the colour mask. */
+void proto_wolfram_ribbon_prepare(ProtoFrame *frame,
+                                   const ProtoConfig *config,
+                                   const ProtoAnimation *animation);
+/* Two-arm Fermat spiral, one continuous divider. */
+void proto_fermat_spiral_point(float p, float cell_start,
+                               float cell_span, float amplitude,
+                               float progress, float *x, float *y);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif

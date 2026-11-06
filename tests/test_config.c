@@ -174,6 +174,54 @@ int main(void) {
         assert(growth.sections[0].amplitude == 7.5f);
     }
 #endif
+#ifdef PROTO_RIBBON_CFG
+    {
+        ProtoConfig ribbon, again;
+        proto_config_defaults(&ribbon);
+        assert(proto_config_load(PROTO_RIBBON_CFG, &ribbon, error, sizeof error));
+        assert(ribbon.sections[1].formula == PROTO_WOLFRAM_RIBBON);
+        assert(fabsf(ribbon.sections[1].ribbon_width - 6.5f)<0.0001f);
+        assert(proto_config_save(path, &ribbon, error, sizeof error));
+        proto_config_defaults(&again);
+        assert(proto_config_load(path, &again, error, sizeof error));
+        assert(fabsf(again.sections[1].ribbon_width - 6.5f)<0.0001f);
+        remove(path);
+    }
+#endif
+#ifdef PROTO_DOUBLE_RIBBON_CFG
+    {
+        ProtoConfig twin, loaded;
+        proto_config_defaults(&twin);
+        assert(proto_config_load(PROTO_DOUBLE_RIBBON_CFG, &twin, error, sizeof error));
+        assert(twin.section_count == 2 && !twin.show_divider);
+        assert(twin.sections[1].formula == PROTO_WOLFRAM_DOUBLE_RIBBON);
+        assert(fabsf(twin.sections[1].ribbon_width-5.0f) < 0.001f);
+        assert(twin.sections[1].cycles == 4.0f);
+        assert(proto_config_save(path, &twin, error, sizeof error));
+        proto_config_defaults(&loaded);
+        assert(proto_config_load(path, &loaded, error, sizeof error));
+        assert(loaded.sections[1].formula == PROTO_WOLFRAM_DOUBLE_RIBBON);
+        assert(fabsf(loaded.sections[1].ribbon_width-5.0f) < 0.001f);
+        remove(path);
+    }
+#endif
+#ifdef PROTO_FERMAT_CFG
+    {
+        ProtoConfig fern, readback;
+        proto_config_defaults(&fern);
+        assert(proto_config_load(PROTO_FERMAT_CFG, &fern, error, sizeof error));
+        assert(fern.section_count == 2 && !fern.show_divider);
+        assert(fern.sections[0].formula == PROTO_SPATIAL_LIGHTNING);
+        assert(fern.sections[1].formula == PROTO_FERMAT_SPIRAL);
+        assert(fabsf(fern.sections[1].amplitude - 11.0f) < 0.01f);
+        assert(fern.sections[1].repeat_visible);
+        assert(proto_config_save(path, &fern, error, sizeof error));
+        proto_config_defaults(&readback);
+        assert(proto_config_load(path, &readback, error, sizeof error));
+        assert(readback.sections[1].formula == PROTO_FERMAT_SPIRAL);
+        remove(path);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

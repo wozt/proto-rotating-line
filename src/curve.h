@@ -28,6 +28,11 @@ typedef enum {
     PROTO_SPATIAL_WAVE,
     PROTO_SPATIAL_LIGHTNING,
     PROTO_WOLFRAM_HALFTURN,
+    PROTO_WOLFRAM_TENTACLE,
+    PROTO_WOLFRAM_RIBBON,
+    PROTO_WOLFRAM_DOUBLE_RIBBON,
+    PROTO_PINCHED_ROPE,
+    PROTO_FERMAT_SPIRAL,
     PROTO_CUSTOM,
     PROTO_FORMULA_COUNT
 } ProtoFormula;
@@ -57,6 +62,7 @@ typedef struct {
     float amplitude;     /* Pixels perpendicular to the original divider. */
     float cycles;        /* Repetitions within one section. */
     float phase_speed;   /* Cycles per second, signed. */
+    float ribbon_width; /* Full tentacle width in logical pixels. */
     float spiral_scale; /* 0=legacy 1.0, or 0.35..1.0 */
     float gap_pixels;    /* Flat gap between motifs, 0..5 logical px. */
     bool repeat_visible; /* Eight motifs span the visible half-line when selected. */
@@ -99,6 +105,8 @@ typedef struct {
     float offsets[PROTO_PROFILE_SAMPLES];
     float x_coords[PROTO_PROFILE_SAMPLES];
     bool parametric;
+    /* Filled cyan ribbon; rasterized per frame, never a crossing parity. */
+    unsigned char ribbon_mask[PROTO_WIDTH * PROTO_HEIGHT];
     unsigned char cross_count[PROTO_CROSS_COLS];
     float cross_y[PROTO_CROSS_COLS][PROTO_CROSS_MAX];
 } ProtoFrame;
