@@ -962,12 +962,12 @@ int main(void) {
     {
         const float speed = 0.2f;
         const float span = 120.0f;
-        const float size_step = 0.5f / 7.0f;
+        const float size_step = exp2f(1.0f/7.0f);
         const float winding_step = 0.75f / 7.0f;
         float previous_end = 0.0f;
         float previous_diameter = 0.0f;
         for (int i = 0; i < 8; ++i) {
-            const float grade = 0.5f + size_step * (float)i;
+            const float grade = 0.5f * powf(size_step, (float)i);
             const float winding = 0.25f + winding_step * (float)i;
             const float direction = (i & 1) ? -1.0f : 1.0f;
             float start, cell_span, x, y;
@@ -975,7 +975,9 @@ int main(void) {
             const float end = start + cell_span;
             const float radius = 0.5f * cell_span;
             const float centre = start + radius;
-            const float expected_diameter = span * grade / 6.0f;
+            float sum = 0.0f;
+            for (int j = 0; j < 8; ++j) sum += 0.5f * powf(size_step, (float)j);
+            const float expected_diameter = span * grade / sum;
             assert(fabsf(cell_span - expected_diameter) < 0.0001f);
             if (i > 0) {
                 assert(fabsf(start - previous_end) < 0.00003f);
@@ -1067,5 +1069,102 @@ int main(void) {
     }
 
     puts("curve_math: ok");
+    /* Patch 0028: exponential touching widths and delayed synchronized peaks. */
+    {
+        const float half = 120.0f, speed = 0.2f;
+        float sizes[8], last = 0.0f;
+        for (int i = 0; i < 8; ++i) {
+            float x, w;
+            proto_fermat_packed_cell(0.0f, half, 8, i, &x, &w);
+            assert(fabsf(x-last) < .00004f);
+            if (i > 0) assert(w > sizes[i-1]);
+            sizes[i] = w;
+            last = x+w;
+            /* They still all touch at the common peak. */
+            assert(fabsf(proto_fermat_stagger_progress(2.5f, speed, i, .075f)-1.0f) < .00001f);
+            assert(fabsf(proto_fermat_stagger_progress(0.0f, speed, i, .075f)) < .00001f);
+            assert(isfinite(proto_fermat_stagger_progress(1.5f, speed, i, .075f)));
+            assert(proto_fermat_stagger_progress(1.0f, speed, i, .075f) <=
+                   proto_fermat_stagger_progress(1.0f, speed, 0, .075f)+.00001f);
+        }
+        assert(fabsf(last-half) < .00005f);
+        assert(fabsf(sizes[0]/sizes[7]-0.5f) < .00002f);
+        assert(sizes[4]/sizes[3] > sizes[1]/sizes[0]-0.0001f);
+        assert(fabsf(proto_metroid_lightning_value(6.0f)-
+            ((1.0f/(1.0f+expf(-15.0f))) * (0.15f*3.0f+0.5f)*(-0.5f))) < .0002f);
+        assert(isfinite(proto_metroid_lightning_value(8.75f)));
+
+        ProtoConfig cfg28;
+        ProtoAnimation anim28;
+        ProtoFrame start28, peak28;
+        proto_config_defaults(&cfg28);
+        cfg28.section_count = 2;
+        cfg28.sections[0].formula = PROTO_METROID_LIGHTNING;
+        cfg28.sections[0].amplitude = 8.2f;
+        cfg28.sections[0].cycles = 4.0f;
+        cfg28.sections[0].repeat_visible = true;
+        cfg28.sections[0].phase_speed = speed;
+        cfg28.sections[1].formula = PROTO_FERMAT_TWIST;
+        cfg28.sections[1].amplitude = 15.0f;
+        cfg28.sections[1].cycles = 8.0f;
+        cfg28.sections[1].repeat_visible = true;
+        cfg28.sections[1].phase_speed = speed;
+        proto_animation_init(&anim28, &cfg28);
+        anim28.time = 0;
+        proto_make_frame(&cfg28, &anim28, &start28);
+        anim28.time = 2.5f;
+        proto_make_frame(&cfg28, &anim28, &peak28);
+        assert(peak28.parametric);
+        int flashes = 0;
+        for (int k = 0; k < PROTO_PROFILE_SAMPLES; ++k) {
+            assert(isfinite(peak28.x_coords[k]) && isfinite(peak28.offsets[k]));
+            if (k < PROTO_PROFILE_SAMPLES/2)
+                flashes += fabsf(peak28.offsets[k]) > .2f;
+            assert(fabsf(start28.offsets[k]) < .003f);
+        }
+        assert(flashes > 25);
+    }
+
+    /* Patch 0029: transient pulses change their respective side only. */
+    {
+        ProtoConfig p29;
+        ProtoAnimation a29;
+        ProtoFrame base29, aria29, metroid29;
+        proto_config_defaults(&p29);
+        p29.section_count = 2;
+        p29.sections[0].formula = PROTO_METROID_LIGHTNING;
+        p29.sections[0].amplitude = 8.2f;
+        p29.sections[0].cycles = 4.0f;
+        p29.sections[0].repeat_visible = true;
+        p29.sections[0].phase_speed = 0.2f;
+        p29.sections[1].formula = PROTO_FERMAT_TWIST;
+        p29.sections[1].amplitude = 15.0f;
+        p29.sections[1].cycles = 8.0f;
+        p29.sections[1].repeat_visible = true;
+        p29.sections[1].phase_speed = 0.2f;
+        proto_animation_init(&a29, &p29);
+        assert(a29.aria_pulse_age < 0 && a29.metroid_pulse_age < 0);
+        a29.time = 1.6f;
+        proto_make_frame(&p29, &a29, &base29);
+        a29.aria_pulse_age = 0.11f;
+        proto_make_frame(&p29, &a29, &aria29);
+        a29.aria_pulse_age = -1.0f;
+        a29.metroid_pulse_age = 0.11f;
+        proto_make_frame(&p29, &a29, &metroid29);
+        int changed_aria = 0, changed_metroid = 0;
+        for (int i = 0; i < PROTO_PROFILE_SAMPLES; ++i) {
+            float base = -168.0f+336.0f*i/(PROTO_PROFILE_SAMPLES-1);
+            if (base >= 0.0f) {
+                changed_aria += fabsf(base29.offsets[i]-aria29.offsets[i]) > 0.0005f ||
+                    fabsf(base29.x_coords[i]-aria29.x_coords[i]) > 0.0005f;
+                assert(fabsf(base29.offsets[i]-metroid29.offsets[i]) < 0.0002f);
+            } else {
+                changed_metroid += fabsf(base29.offsets[i]-metroid29.offsets[i]) > 0.0005f;
+                assert(fabsf(base29.offsets[i]-aria29.offsets[i]) < 0.0002f);
+            }
+        }
+        assert(changed_aria > 8 && changed_metroid > 8);
+    }
+
     return 0;
 }

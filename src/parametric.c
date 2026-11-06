@@ -647,6 +647,8 @@ void proto_fermat_twist_point(float p, float cell_start, float cell_span,
  * Eight weights are 0.5, 0.5+0.5/7, ..., 1.0; their sum is 6.
  * Prefix sums produce shared boundaries (the same formula for both cells)
  * instead of accumulating rounded fixed-size centre positions. */
+/* Patch 0028: exponential packed widths. Prefix-sum boundaries mean
+ * adjacent cells share the same exact border even with unequal widths. */
 void proto_fermat_packed_cell(float start, float span, int count, int index,
                               float *cell_start, float *cell_span) {
     if (count < 2) {
@@ -654,17 +656,55 @@ void proto_fermat_packed_cell(float start, float span, int count, int index,
         *cell_span = span;
         return;
     }
-    const double d = (double)(count - 1);
-    const double i = (double)index;
-    const double total = 0.75 * (double)count;
-    const double before = (0.5 * i + 0.25 * i * (i - 1.0) / d) / total;
-    const double after = (0.5 * (i + 1.0) +
-                          0.25 * i * (i + 1.0) / d) / total;
-    const float left = start + (float)((double)span * before);
+    if (index < 0) index = 0;
+    if (index >= count) index = count - 1;
+    double total = 0.0, before = 0.0, after = 0.0;
+    const double denom = (double)(count-1);
+    for (int i = 0; i < count; ++i) {
+        const double weight = 0.5 * exp2((double)i / denom);
+        total += weight;
+        if (i < index) before += weight;
+        if (i <= index) after += weight;
+    }
+    const float left = start + (float)(span * before / total);
     const float right = index == count - 1 ? start + span :
-                        start + (float)((double)span * after);
+                        start + (float)(span * after / total);
     *cell_start = left;
     *cell_span = right - left;
+}
+
+
+/* Literal form of the requested Metroid expression, x in [0,9].
+ * mod() is the positive fractional part (works for negative x-3). */
+float proto_metroid_lightning_value(float x) {
+    const float sigmoid = 1.0f/(1.0f+expf(-3.0f*(x-1.0f)));
+    const float z = x-3.0f;
+    const float mod1 = z-floorf(z);
+    const float tooth = 1.0f-2.0f*fabsf(mod1-0.5f)-0.5f;
+    return sigmoid*(0.15f*z+0.5f)*tooth +
+           fmaxf(0.0f,x-6.5f)*0.2f*sinf(50.0f*x);
+}
+
+/* The same 7th-degree fast-midpoint easing as the Fermat twist. Each cell's
+ * expansion begins late but is guaranteed to hit its shared peak at the SAME
+ * global half-cycle boundary. Retraction remains synchronized and smooth. */
+float proto_fermat_stagger_progress(float time, float speed,
+                                    int index, float delay) {
+    if (speed == 0.0f) return 1.0f;
+    const double period = 1.0/fabs((double)speed);
+    double phase = fmod((double)time, period);
+    if (phase < 0.0) phase += period;
+    const double half = period*0.5;
+    const double offset = fmin(half*0.65, (double)index * (double)delay);
+    double u;
+    if (phase <= half)
+        u = (phase-offset)/(half-offset);
+    else
+        u = (period-phase)/half;
+    if (u <= 0.0) return 0.0f;
+    if (u >= 1.0) return 1.0f;
+    const double u4 = u*u*u*u;
+    return (float)(u4*(35.0+u*(-84.0+u*(70.0-20.0*u))));
 }
 
 void proto_parametric_prepare(ProtoFrame *frame) {

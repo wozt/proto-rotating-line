@@ -310,6 +310,23 @@ int main(void) {
         remove(path);
     }
 #endif
+#ifdef PROTO_METROID_EXP_CFG
+    {
+        ProtoConfig c28, reread28;
+        proto_config_defaults(&c28);
+        assert(proto_config_load(PROTO_METROID_EXP_CFG, &c28, error, sizeof error));
+        assert(c28.section_count == 2);
+        assert(c28.sections[0].formula == PROTO_METROID_LIGHTNING);
+        assert(c28.sections[0].cycles == 4.0f);
+        assert(c28.sections[1].formula == PROTO_FERMAT_TWIST);
+        assert(c28.sections[1].cycles == 8.0f);
+        assert(proto_config_save(path, &c28, error, sizeof error));
+        proto_config_defaults(&reread28);
+        assert(proto_config_load(path, &reread28, error, sizeof error));
+        assert(reread28.sections[0].formula == PROTO_METROID_LIGHTNING);
+        remove(path);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

@@ -2,6 +2,7 @@
 /* SDL handles presentation only; all divider geometry lives in curve.c. */
 #include "config.h"
 #include "curve.h"
+#include "pulse_audio.h"
 
 #include <SDL3/SDL.h>
 #include <errno.h>
@@ -10,6 +11,82 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+
+/* Patch 0029: keyboard X/Y and Nintendo-layout gamepad north/west.
+ * Long hold only launches if the corresponding environment command is set. */
+typedef struct {
+    bool held;
+    bool launched;
+    float elapsed;
+    float pulse_elapsed;
+} ProtoHeldButton;
+
+static void proto_request_launch(bool aria) {
+    const char *env_key = aria ? "PROTO_ARIA_LAUNCH" : "PROTO_METROID_LAUNCH";
+    const char *command = getenv(env_key);
+    if (!command || !*command) {
+        fprintf(stderr, "%s is not configured; long press will not launch a game.\n", env_key);
+        return;
+    }
+    const pid_t child = fork();
+    if (child == 0) {
+        execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+        _exit(127);
+    }
+    if (child < 0) fprintf(stderr, "Failed to start %s: %s\n", env_key, strerror(errno));
+    else fprintf(stdout, "Launch requested: %s\n", env_key);
+}
+
+static void proto_trigger_pulse(ProtoAnimation *animation, SDL_AudioStream *sound,
+                                bool aria) {
+    if (aria) animation->aria_pulse_age = 0.0f;
+    else animation->metroid_pulse_age = 0.0f;
+    proto_pulse_audio_emit(sound, aria);
+}
+
+static void proto_press(ProtoHeldButton *button, ProtoAnimation *animation,
+                        SDL_AudioStream *sound, bool aria) {
+    if (button->held) return;
+    button->held = true;
+    button->launched = false;
+    button->elapsed = 0.0f;
+    button->pulse_elapsed = 0.0f;
+    proto_trigger_pulse(animation, sound, aria);
+}
+
+static void proto_release(ProtoHeldButton *button) {
+    button->held = false;
+    button->launched = false;
+    button->elapsed = 0.0f;
+    button->pulse_elapsed = 0.0f;
+}
+
+static void proto_hold_tick(ProtoHeldButton *button, float dt,
+                            ProtoAnimation *animation, SDL_AudioStream *sound, bool aria) {
+    if (!button->held) return;
+    button->elapsed += dt;
+    button->pulse_elapsed += dt;
+    if (!button->launched && button->elapsed >= 1.0f) {
+        button->launched = true;
+        proto_request_launch(aria);
+    }
+    if (button->pulse_elapsed >= 0.5f) {
+        button->pulse_elapsed -= 0.5f;
+        proto_trigger_pulse(animation, sound, aria);
+    }
+}
+
+static void proto_pulse_age_tick(ProtoAnimation *animation, float dt) {
+    float *ages[] = { &animation->aria_pulse_age, &animation->metroid_pulse_age };
+    for (int i = 0; i < 2; ++i) {
+        if (*ages[i] >= 0.0f) {
+            *ages[i] += dt;
+            if (*ages[i] >= 0.24f) *ages[i] = -1.0f;
+        }
+    }
+}
 
 static void usage(const char *program) {
     fprintf(stderr, "Usage: %s [--config FILE.json] [--sections 1|2|4|8|16] "
@@ -67,7 +144,8 @@ static void update_title(SDL_Window *window, const ProtoConfig *config,
     snprintf(title, sizeof title,
              "Rotating Line | %d sections | %.1f deg/s | section %d: %s | "
              "Tab select, F formula, 1/2/4/8/0 count, L line, R reload JSON, "
-             "+/- speed, Up/Down amplitude, Space pause, S save",
+             "+/- speed, Up/Down amplitude, Space pause, S save, "
+             "X Aria | Y Metroid (hold 1s to launch)",
              config->section_count, config->rotation_speed, selected + 1,
              proto_formula_name(config->sections[selected].formula));
     if (animation->paused) strncat(title, " | PAUSED", sizeof title - strlen(title) - 1);
@@ -156,7 +234,7 @@ int main(int argc, char **argv) {
         usage(argv[0]);
         return 2;
     }
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
@@ -174,12 +252,16 @@ int main(int argc, char **argv) {
         SDL_Quit();
         return 1;
     }
+    SDL_InitSubSystem(SDL_INIT_AUDIO); /* Silent fallback if unavailable. */
+    SDL_AudioStream *sound = proto_pulse_audio_open();
+    if (!sound) fprintf(stderr, "Audio unavailable: %s\n", SDL_GetError());
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
     SDL_SetRenderVSync(renderer, 1);
     unsigned char pixels[PROTO_WIDTH * PROTO_HEIGHT * 4];
     ProtoFrame frame;
     ProtoAnimation animation;
     proto_animation_init(&animation, &config);
+    ProtoHeldButton aria_hold = {0}, metroid_hold = {0};
     int selected = 0;
     update_title(window, &config, &animation, selected);
     bool running = true;
@@ -189,14 +271,43 @@ int main(int argc, char **argv) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) running = false;
             else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-                if (event.key.key == SDLK_ESCAPE) running = false;
+                if (event.key.key == SDLK_X)
+                    proto_press(&aria_hold, &animation, sound, true);
+                else if (event.key.key == SDLK_Y)
+                    proto_press(&metroid_hold, &animation, sound, false);
+                else if (event.key.key == SDLK_ESCAPE) running = false;
                 else key_down(&event.key, &config, &animation, &selected, config_path);
                 update_title(window, &config, &animation, selected);
+            } else if (event.type == SDL_EVENT_KEY_UP) {
+                if (event.key.key == SDLK_X) proto_release(&aria_hold);
+                if (event.key.key == SDLK_Y) proto_release(&metroid_hold);
+            } else if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
+                if (!SDL_GetGamepadFromID(event.gdevice.which))
+                    (void)SDL_OpenGamepad(event.gdevice.which);
+            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+                SDL_Gamepad *removed = SDL_GetGamepadFromID(event.gdevice.which);
+                if (removed) SDL_CloseGamepad(removed);
+                proto_release(&aria_hold);
+                proto_release(&metroid_hold);
+            } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                if (event.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH)
+                    proto_press(&aria_hold, &animation, sound, true);
+                else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_WEST)
+                    proto_press(&metroid_hold, &animation, sound, false);
+            } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_UP) {
+                if (event.gbutton.button == SDL_GAMEPAD_BUTTON_NORTH)
+                    proto_release(&aria_hold);
+                else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_WEST)
+                    proto_release(&metroid_hold);
             }
         }
         uint64_t now = SDL_GetTicksNS();
         float dt = (float)(now - last) / 1000000000.0f;
         last = now;
+        if (dt > 0.10f) dt = 0.10f;
+        proto_pulse_age_tick(&animation, dt);
+        proto_hold_tick(&aria_hold, dt, &animation, sound, true);
+        proto_hold_tick(&metroid_hold, dt, &animation, sound, false);
         proto_animation_tick(&animation, &config, dt);
         proto_make_frame(&config, &animation, &frame);
         draw(&config, &frame, pixels);
@@ -205,6 +316,15 @@ int main(int argc, char **argv) {
         SDL_RenderClear(renderer);
         SDL_RenderTexture(renderer, texture, NULL, NULL);
         SDL_RenderPresent(renderer);
+    }
+    if (sound) SDL_DestroyAudioStream(sound);
+    SDL_JoystickID *ids = SDL_GetGamepads(NULL);
+    if (ids) {
+        for (int j = 0; ids[j]; ++j) {
+            SDL_Gamepad *p = SDL_GetGamepadFromID(ids[j]);
+            if (p) SDL_CloseGamepad(p);
+        }
+        SDL_free(ids);
     }
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);

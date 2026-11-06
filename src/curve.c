@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -75,6 +75,8 @@ void proto_config_defaults(ProtoConfig *config) {
 
 void proto_animation_init(ProtoAnimation *animation, const ProtoConfig *config) {
     memset(animation, 0, sizeof *animation);
+    animation->aria_pulse_age = -1.0f;
+    animation->metroid_pulse_age = -1.0f;
     for (int i = 0; i < PROTO_MAX_SECTIONS; ++i) {
         animation->previous[i] = config->sections[i];
         animation->morph[i] = 1.0f;
@@ -332,15 +334,58 @@ static void spatial_gradient_point(const ProtoSection *s, float baseline,
     }
 }
 
+/* Short, root-preserving 0.24 s fast ripple: approximately two rapid
+ * spins around the motif centre, greatest away from the straight joins. */
+static void proto_fermat_impulse(float *x, float *y,
+                                 float cell_start, float cell_span,
+                                 float p, float age) {
+    if (age < 0.0f || age >= 0.24f || p <= 0.20f || p >= 0.80f) return;
+    const float f = age/0.24f;
+    const float envelope = sinf(PROTO_PI*f);
+    float q = p <= 0.50f ? (p-0.20f)/0.30f : (0.80f-p)/0.30f;
+    q = smoothstep(q);
+    const float angle = (4.0f*PROTO_PI*f*envelope)*q*q;
+    const float scale = 1.0f + 0.18f*envelope*q*q;
+    const float cx = cell_start+0.5f*cell_span;
+    const float dx = (*x-cx)*scale, dy = (*y)*scale;
+    *x = cx + dx*cosf(angle) - dy*sinf(angle);
+    *y = dx*sinf(angle) + dy*cosf(angle);
+}
+
 static void shape_point(const ProtoSection *s, float baseline, float u,
                         float start, float span, float t, float curl,
-                        float *x, float *y) {
+                        float pulse_age, float *x, float *y) {
     *x = baseline;
     *y = 0.0f;
     if (u < 0.0f || u > 1.0f) return;
     if (s->formula == PROTO_WOLFRAM_RIBBON ||
         s->formula == PROTO_WOLFRAM_DOUBLE_RIBBON ||
         s->formula == PROTO_PINCHED_ROPE) return; /* Straight parent divider; tube is a filled mask. */
+    if (s->formula == PROTO_METROID_LIGHTNING) {
+        /* Four Metroid teeth along the left visible half-line. The curve
+         * is the requested 0..9 expression, NOT a generic noise effect. */
+        int bolts = (int)lroundf(s->cycles);
+        if (bolts < 1) bolts = 1;
+        if (bolts > 16) bolts = 16;
+        const float position = fminf((float)bolts, fmaxf(0.0f, u*bolts));
+        int bolt = (int)position;
+        if (bolt >= bolts) bolt = bolts-1;
+        const float local = position - bolt;
+        const float fade = smoothstep(local/0.12f) *
+                           smoothstep((1.0f-local)/0.12f);
+        /* Left half: delay propagates outward from the central divider. */
+        const int from_centre = bolts-1-bolt;
+        const float growth = proto_fermat_stagger_progress(t, s->phase_speed,
+                                                            from_centre, 0.13f);
+        const float pulse_envelope = pulse_age >= 0.0f && pulse_age < 0.24f ?
+            sinf(PROTO_PI*pulse_age/0.24f) : 0.0f;
+        *y = s->amplitude * growth * fade *
+             (proto_metroid_lightning_value(9.0f*local) *
+             (1.0f + 1.6f*pulse_envelope) +
+             0.25f*pulse_envelope*sinf(50.0f*9.0f*local +
+             8.0f*PROTO_PI*pulse_age/0.24f));
+        return;
+    }
     if (s->formula == PROTO_SPATIAL_WAVE ||
         s->formula == PROTO_SPATIAL_LIGHTNING) {
         spatial_gradient_point(s, baseline, u, start, span, t, x, y);
@@ -377,11 +422,12 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
             const float winding = 0.25f + 0.75f * outward;
             const float radius = fminf(fmaxf(s->amplitude, 0.0f),
                                        0.50f * packed_span);
-            const float progress = proto_fermat_twist_progress(t, s->phase_speed);
+            const float progress = proto_fermat_stagger_progress(t, s->phase_speed, packed_index, 0.075f);
             const float direction = proto_fermat_twist_direction(t, s->phase_speed) *
                                     ((packed_index & 1) ? -1.0f : 1.0f);
             proto_fermat_twist_point(p, packed_start, packed_span,
                                     radius, progress, winding, direction, x, y);
+            proto_fermat_impulse(x, y, packed_start, packed_span, p, pulse_age);
             return;
         }
         return;
@@ -512,9 +558,15 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
             blend = apply_easing(animation->morph[index], animation->active_easing[index]);
         float xn, yn, xp, yp;
         shape_point(&next, base, u, start, span, animation->time,
-                    next.formula == PROTO_SPIRAL ? blend : 1.0f, &xn, &yn);
+                    next.formula == PROTO_SPIRAL ? blend : 1.0f,
+                    next.formula == PROTO_FERMAT_TWIST ? animation->aria_pulse_age :
+                    next.formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age : -1.0f,
+                    &xn, &yn);
         shape_point(previous, base, u, start, span, animation->time,
-                    previous->formula == PROTO_SPIRAL ? 1.0f - blend : 1.0f, &xp, &yp);
+                    previous->formula == PROTO_SPIRAL ? 1.0f - blend : 1.0f,
+                    previous->formula == PROTO_FERMAT_TWIST ? animation->aria_pulse_age :
+                    previous->formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age : -1.0f,
+                    &xp, &yp);
         /* Spiral curl is already driven by morph. Applying the blend a
          * second time would square its radius and hide the actual coil. */
         if (next.formula == PROTO_SPIRAL && previous->formula != PROTO_SPIRAL) {

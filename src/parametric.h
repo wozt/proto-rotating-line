@@ -35,6 +35,9 @@ void proto_fermat_twist_point(float p, float cell_start,
 /* Peak-radius-weighted positions for eight Fermat twists. */
 void proto_fermat_packed_cell(float start, float span, int count, int index,
                               float *cell_start, float *cell_span);
+float proto_metroid_lightning_value(float x);
+float proto_fermat_stagger_progress(float time, float speed,
+                                    int index, float delay);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif
