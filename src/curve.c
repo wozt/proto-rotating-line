@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "fermat_tall", "metroid_eight", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -361,6 +361,64 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
     if (s->formula == PROTO_WOLFRAM_RIBBON ||
         s->formula == PROTO_WOLFRAM_DOUBLE_RIBBON ||
         s->formula == PROTO_PINCHED_ROPE) return; /* Straight parent divider; tube is a filled mask. */
+    if (s->formula == PROTO_METROID_EIGHT) {
+        /* Eight actual contiguous triangular periods of the given plot,
+         * ordered from the line centre to the exterior of the Metroid half. */
+        const int nbolts = 8;
+        const float position = fminf(8.0f, fmaxf(0.0f, u*8.0f));
+        int cell = (int)position;
+        if (cell >= nbolts) cell = nbolts - 1;
+        const float local = position - (float)cell;
+        const int outward_index = 7-cell;
+        const float tlocal = 1.0f - local;
+        const float left_x = 1.0f + (float)outward_index;
+        const float signal_x = left_x+tlocal;
+        const float raw = proto_metroid_lightning_value(signal_x);
+        const float y0 = proto_metroid_lightning_value(left_x);
+        const float y1 = proto_metroid_lightning_value(left_x+1.0f);
+        /* Remove the secant so individual sections meet at y=0. */
+        const float signal = raw - (y0+(y1-y0)*tlocal);
+        const float join = smoothstep(tlocal/0.14f) *
+                           smoothstep((1.0f-tlocal)/0.14f);
+        const float scale = 0.25f*exp2f(2.0f*(float)outward_index/7.0f);
+        const float growth = proto_fermat_bothways_progress(t, s->phase_speed,
+                                                              outward_index, 0.2f);
+        const float pulse = pulse_age >= 0.0f && pulse_age < 0.24f ?
+                            sinf(PROTO_PI*pulse_age/0.24f) : 0.0f;
+        /* The quick sine component is already present in the supplied plot. */
+        *y = s->amplitude * scale * growth * join *
+             (signal * (1.0f+1.6f*pulse) +
+              0.11f*pulse*sinf(50.0f*signal_x+8.0f*PROTO_PI*pulse_age/0.24f));
+        return;
+    }
+    if (s->formula == PROTO_FERMAT_TALL) {
+        /* Packed x-centres, but exponentially growing vertical extent.
+         * This deliberately decouples screen height from packed cell width. */
+        if (s->cycles < 7.5f || s->cycles > 8.5f) return;
+        for (int i = 0; i < 8; ++i) {
+            float packed_start, packed_span;
+            proto_fermat_packed_cell(start, span, 8, i, &packed_start, &packed_span);
+            if (baseline < packed_start - 0.0002f ||
+                baseline > packed_start+packed_span+0.0002f) continue;
+            const float p = fminf(1.0f, fmaxf(0.0f,
+                                          (baseline-packed_start)/packed_span));
+            const float radius = 0.5f*packed_span;
+            const float winding = 0.25f+0.75f*(float)i/7.0f;
+            const float growth = proto_fermat_bothways_progress(t, s->phase_speed,
+                                                                 i, 0.2f);
+            const float direction = proto_fermat_twist_direction(t, s->phase_speed) *
+                                    ((i & 1) ? -1.0f : 1.0f);
+            proto_fermat_twist_point(p, packed_start, packed_span,
+                                    radius, growth, winding, direction, x, y);
+            proto_fermat_impulse(x, y, packed_start, packed_span, p, pulse_age);
+            const float target_half_height = 24.0f*exp2f((float)i/7.0f) *
+                                             fminf(2.0f,fmaxf(0.0f,s->amplitude/15.0f));
+            const float reference = proto_fermat_tall_reference_peak(i);
+            *y *= target_half_height/(radius*reference);
+            return;
+        }
+        return;
+    }
     if (s->formula == PROTO_METROID_LIGHTNING) {
         /* Four Metroid teeth along the left visible half-line. The curve
          * is the requested 0..9 expression, NOT a generic noise effect. */
@@ -560,12 +618,16 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
         shape_point(&next, base, u, start, span, animation->time,
                     next.formula == PROTO_SPIRAL ? blend : 1.0f,
                     next.formula == PROTO_FERMAT_TWIST ? animation->aria_pulse_age :
-                    next.formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age : -1.0f,
+                    next.formula == PROTO_FERMAT_TALL ? animation->aria_pulse_age :
+                    next.formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age :
+                    next.formula == PROTO_METROID_EIGHT ? animation->metroid_pulse_age : -1.0f,
                     &xn, &yn);
         shape_point(previous, base, u, start, span, animation->time,
                     previous->formula == PROTO_SPIRAL ? 1.0f - blend : 1.0f,
                     previous->formula == PROTO_FERMAT_TWIST ? animation->aria_pulse_age :
-                    previous->formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age : -1.0f,
+                    previous->formula == PROTO_FERMAT_TALL ? animation->aria_pulse_age :
+                    previous->formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age :
+                    previous->formula == PROTO_METROID_EIGHT ? animation->metroid_pulse_age : -1.0f,
                     &xp, &yp);
         /* Spiral curl is already driven by morph. Applying the blend a
          * second time would square its radius and hide the actual coil. */
@@ -596,6 +658,9 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
             frame->parametric = true;
     for (int side = 0; side < config->section_count; ++side)
         if (config->sections[side].formula == PROTO_FERMAT_TWIST)
+            frame->parametric = true;
+    for (int side = 0; side < config->section_count; ++side)
+        if (config->sections[side].formula == PROTO_FERMAT_TALL)
             frame->parametric = true;
     if (frame->parametric) proto_parametric_prepare(frame);
     proto_wolfram_ribbon_prepare(frame, config, animation);

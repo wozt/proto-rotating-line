@@ -707,6 +707,48 @@ float proto_fermat_stagger_progress(float time, float speed,
     return (float)(u4*(35.0+u*(-84.0+u*(70.0-20.0*u))));
 }
 
+/* Patch 0030: the SAME 5-second clock with a 0.2s outward delay on
+ * both expansion and retraction. The last cell starts both half-phases 1.4s
+ * after the first; the common expansion peak stays fixed at t=2.5s. */
+float proto_fermat_bothways_progress(float time, float speed,
+                                    int from_centre, float delay) {
+    if (speed == 0.0f) return 1.0f;
+    const double period = 1.0 / fabs((double)speed);
+    double phase = fmod((double)time, period);
+    if (phase < 0.0) phase += period;
+    const double half = period * 0.5;
+    const double offset = fmin(0.9*half, fmax(0.0, (double)from_centre * (double)delay));
+    const double duration = half - offset;
+    /* Retracting: pause at full deployment until the delayed start time. */
+    const double u = phase <= half ? (phase-offset)/duration :
+                     (period-phase)/duration;
+    if (u <= 0.0) return 0.0f;
+    if (u >= 1.0) return 1.0f;
+    const double u2 = u*u;
+    const double u4 = u2*u2;
+    return (float)(u4*(35.0+u*(-84.0+u*(70.0-20.0*u))));
+}
+
+/* Normalize against the ACTUAL softened Fermat outline at unit radius. The
+ * eight cached reference maxima are shared by both mirrored directions;
+ * the expensive sample loop runs only once per index, not once per pixel. */
+float proto_fermat_tall_reference_peak(int from_centre) {
+    static float cached[8] = {0};
+    if (from_centre < 0) from_centre = 0;
+    if (from_centre > 7) from_centre = 7;
+    if (cached[from_centre] > 0.0f) return cached[from_centre];
+    const float winding = 0.25f + 0.75f * (float)from_centre / 7.0f;
+    float maximum = 0.0f;
+    for (int k = 0; k <= 2048; ++k) {
+        float x, y;
+        proto_fermat_twist_point((float)k/2048.0f, 0.0f, 2.0f,
+                                 1.0f, 1.0f, winding, 1.0f, &x, &y);
+        maximum = fmaxf(maximum, fabsf(y));
+    }
+    cached[from_centre] = fmaxf(0.05f, maximum);
+    return cached[from_centre];
+}
+
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES - 1; ++i) {

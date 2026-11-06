@@ -327,6 +327,20 @@ int main(void) {
         remove(path);
     }
 #endif
+#ifdef PROTO_ARIA_METROID_TALL_CFG
+    {
+        ProtoConfig c30;
+        proto_config_defaults(&c30);
+        assert(proto_config_load(PROTO_ARIA_METROID_TALL_CFG,&c30,error,sizeof error));
+        assert(c30.section_count == 2);
+        assert(c30.sections[0].formula == PROTO_METROID_EIGHT);
+        assert(c30.sections[0].cycles == 8.0f);
+        assert(fabsf(c30.sections[0].amplitude-24.0f)<.0001f);
+        assert(c30.sections[1].formula == PROTO_FERMAT_TALL);
+        assert(c30.sections[1].cycles == 8.0f);
+        assert(fabsf(c30.sections[1].phase_speed-.2f)<.0001f);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

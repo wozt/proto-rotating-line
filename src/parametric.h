@@ -38,6 +38,9 @@ void proto_fermat_packed_cell(float start, float span, int count, int index,
 float proto_metroid_lightning_value(float x);
 float proto_fermat_stagger_progress(float time, float speed,
                                     int index, float delay);
+float proto_fermat_bothways_progress(float time, float speed,
+                                    int from_centre, float delay);
+float proto_fermat_tall_reference_peak(int from_centre);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif

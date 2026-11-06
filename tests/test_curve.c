@@ -1166,5 +1166,95 @@ int main(void) {
         assert(changed_aria > 8 && changed_metroid > 8);
     }
 
+    /* Patch 0030: true 8-period lightning, tall curls, bidirectional delay. */
+    {
+        ProtoFormula m30, a30;
+        assert(proto_parse_formula("metroid_eight", &m30) && m30 == PROTO_METROID_EIGHT);
+        assert(proto_parse_formula("fermat_tall", &a30) && a30 == PROTO_FERMAT_TALL);
+        const float speed = 0.2f;
+        for (int k = 0; k < 8; ++k) {
+            const float wave_peak = proto_fermat_tall_reference_peak(k);
+            assert(wave_peak > 0.2f && wave_peak < 1.1f);
+            assert(fabsf(proto_fermat_bothways_progress(2.5f, speed, k, 0.2f)-1.0f) < .00001f);
+            assert(fabsf(proto_fermat_bothways_progress(5.0f, speed, k, 0.2f)) < .00001f);
+            assert(fabsf(proto_fermat_bothways_progress(0.0f, speed, k, 0.2f)) < .00001f);
+            const float at_one = proto_fermat_bothways_progress(1.0f, speed, k, .2f);
+            const float before_fold = proto_fermat_bothways_progress(3.0f, speed, k, .2f);
+            assert(isfinite(at_one) && isfinite(before_fold));
+            if (k) assert(at_one <= proto_fermat_bothways_progress(1.0f, speed, k-1, .2f)+.00001f);
+        }
+        assert(proto_fermat_bothways_progress(1.0f, speed, 7, .2f) == 0.0f);
+        assert(fabsf(proto_fermat_bothways_progress(3.0f, speed, 7, .2f)-1.0f) < .00001f);
+        assert(proto_fermat_bothways_progress(3.0f, speed, 0, .2f) < 1.0f);
+        assert(proto_fermat_bothways_progress(4.1f, speed, 7, .2f) < 1.0f);
+
+        ProtoConfig cfg30;
+        ProtoAnimation ani30;
+        ProtoFrame flat30, peak30, delayed30, reverse30;
+        proto_config_defaults(&cfg30);
+        cfg30.section_count = 2;
+        cfg30.rotation_speed = 0.0f;
+        cfg30.sections[0].formula = PROTO_METROID_EIGHT;
+        cfg30.sections[0].amplitude = 24.0f;
+        cfg30.sections[0].cycles = 8.0f;
+        cfg30.sections[0].repeat_visible = true;
+        cfg30.sections[0].phase_speed = speed;
+        cfg30.sections[1].formula = PROTO_FERMAT_TALL;
+        cfg30.sections[1].amplitude = 15.0f;
+        cfg30.sections[1].cycles = 8.0f;
+        cfg30.sections[1].repeat_visible = true;
+        cfg30.sections[1].phase_speed = speed;
+        proto_animation_init(&ani30, &cfg30);
+        ani30.time = 0.0f;
+        proto_make_frame(&cfg30, &ani30, &flat30);
+        ani30.time = 1.0f;
+        proto_make_frame(&cfg30, &ani30, &delayed30);
+        ani30.time = 2.5f;
+        proto_make_frame(&cfg30, &ani30, &peak30);
+        ani30.time = 7.5f;
+        proto_make_frame(&cfg30, &ani30, &reverse30);
+        float max_y[8] = {0.0f};
+        float metroid_y[8] = {0.0f};
+        for (int j = 0; j < PROTO_PROFILE_SAMPLES; ++j) {
+            const float base = -168.0f+336.0f*j/(PROTO_PROFILE_SAMPLES-1);
+            assert(isfinite(peak30.x_coords[j]) && isfinite(peak30.offsets[j]));
+            assert(fabsf(flat30.offsets[j]) < .005f);
+            if (base >= 0.0f && base < 120.0f) {
+                for (int k = 0; k < 8; ++k) {
+                    float start, span;
+                    proto_fermat_packed_cell(0.0f, 120.0f, 8, k, &start, &span);
+                    if (base >= start && base < start+span) {
+                        max_y[k] = fmaxf(max_y[k],fabsf(peak30.offsets[j]));
+                        assert(fabsf(peak30.x_coords[j]-reverse30.x_coords[j]) < .01f);
+                        assert(fabsf(peak30.offsets[j]+reverse30.offsets[j]) < .01f);
+                        break;
+                    }
+                }
+            } else if (base >= -120.0f && base < 0.0f) {
+                int k = 7-(int)((base+120.0f)/15.0f);
+                if (k < 0) k=0; if (k>7) k=7;
+                metroid_y[k] = fmaxf(metroid_y[k],fabsf(peak30.offsets[j]));
+            }
+        }
+        /* At zero rotation, last spiral reaches >= half the 160px screen. */
+        assert(2.0f*max_y[7] >= 80.0f);
+        assert(2.0f*max_y[7] <= 102.0f);
+        for (int k = 0; k < 8; ++k) {
+            assert(max_y[k] > 10.0f);
+            assert(metroid_y[k] > 0.05f);
+            if (k) assert(max_y[k] > max_y[k-1]);
+        }
+        /* Half-line starting sections react first on BOTH halves. */
+        int lightning_early = 0, lightning_late = 0;
+        for (int j = 0; j < PROTO_PROFILE_SAMPLES; ++j) {
+            const float base = -168.0f+336.0f*j/(PROTO_PROFILE_SAMPLES-1);
+            if (base >= -15.0f && base < 0.0f)
+                lightning_early += fabsf(delayed30.offsets[j]) > .001f;
+            if (base >= -120.0f && base < -105.0f)
+                lightning_late += fabsf(delayed30.offsets[j]) > .001f;
+        }
+        assert(lightning_early > 3 && lightning_late == 0);
+    }
+
     return 0;
 }
