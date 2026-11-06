@@ -23,6 +23,8 @@ void proto_wolfram_ribbon_prepare(ProtoFrame *frame,
 void proto_fermat_spiral_point(float p, float cell_start,
                                float cell_span, float amplitude,
                                float progress, float *x, float *y);
+/* Piecewise cubic position; parabolic velocity per half-cycle. */
+float proto_fermat_parabolic_progress(float time, float phase_speed);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif

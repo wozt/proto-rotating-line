@@ -482,13 +482,24 @@ void proto_wolfram_ribbon_prepare(ProtoFrame *frame,
  * Rotating by -theta_max fixes both outer endpoints on the baseline: the
  * complete path left edge -> negative arm -> centre -> positive arm ->
  * right edge is continuous. No ribbons or white strokes are involved. */
+/* Patch 0021: two separate smoothstep position curves per cycle.
+ * Their velocity, 6u(1-u), is parabolic: slow -> fast -> slow on BOTH halves.
+ * With phase_speed == 0, show the fully extended shape for inspection. */
+float proto_fermat_parabolic_progress(float time, float phase_speed) {
+    if (phase_speed == 0.0f) return 1.0f;
+    float phase = fmodf(time * phase_speed, 1.0f);
+    if (phase < 0.0f) phase += 1.0f;
+    const float u = phase < 0.5f ? 2.0f * phase : 2.0f * (1.0f - phase);
+    return u * u * (3.0f - 2.0f * u);
+}
+
 void proto_fermat_spiral_point(float p, float cell_start, float cell_span,
                                float amplitude, float progress,
                                float *x, float *y) {
     p = fmaxf(0.0f, fminf(1.0f, p));
     progress = fmaxf(0.0f, fminf(1.0f, progress));
     const float centre = cell_start + 0.5f * cell_span;
-    const float max_radius = fminf(fmaxf(0.0f, amplitude), 0.45f * cell_span);
+    const float max_radius = fminf(fmaxf(0.0f, amplitude), 0.49f * cell_span);
     const float outer_radius = max_radius * powf(progress, 0.58f);
     const float theta_max = 7.0f * PI * powf(progress, 1.18f);
     const float lead = 0.12f, trail = 0.88f;
@@ -524,7 +535,12 @@ void proto_fermat_spiral_point(float p, float cell_start, float cell_span,
     const float radius = outer_radius * powf(1.0f - arm_u, 0.58f);
 
     /* Curl is concentrated near the tip to avoid a teardrop silhouette. */
-    const float turn_mix = powf(arm_u, 2.35f);
+    /* Quintic shoulder blends the flat connector into the coil:
+     * curvature starts at zero rather than turning abruptly. */
+    const float shoulder_t = fminf(1.0f, arm_u / 0.22f);
+    const float shoulder = shoulder_t * shoulder_t * shoulder_t *
+        (shoulder_t * (6.0f * shoulder_t - 15.0f) + 10.0f);
+    const float turn_mix = powf(arm_u, 2.35f) * shoulder;
     const float phase = -theta_max * turn_mix;
 
     *x = centre + side * radius * cosf(phase);

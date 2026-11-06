@@ -237,6 +237,19 @@ int main(void) {
         remove(path);
     }
 #endif
+#ifdef PROTO_FERMAT_GRADIENT_CFG
+    {
+        ProtoConfig grad;
+        proto_config_defaults(&grad);
+        assert(proto_config_load(PROTO_FERMAT_GRADIENT_CFG, &grad,
+                                 error, sizeof error));
+        assert(grad.section_count == 2);
+        assert(grad.sections[1].formula == PROTO_FERMAT_SPIRAL);
+        assert(fabsf(grad.sections[1].amplitude - 15.0f) < 0.001f);
+        assert(fabsf(grad.sections[1].cycles - 4.0f) < 0.001f);
+        assert(grad.sections[1].repeat_visible);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

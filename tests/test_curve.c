@@ -775,6 +775,85 @@ int main(void) {
         proto_fermat_spiral_point(0.49f, start, span, amp, 1.0f, &x, &y);
         assert(hypotf(x - (start + 0.5f*span), y) < 2.0f);
     }
+    /* Patch 0021: synchronised graded amplitudes and parabolic-speed clock. */
+    {
+        const float speed = 1.0f / 18.0f;
+        const float times[] = {0, 2.25f, 4.5f, 6.75f, 9.0f,
+                               11.25f, 13.5f, 15.75f, 18.0f};
+        const float expected[] = {0, 0.15625f, 0.5f, 0.84375f, 1,
+                                  0.84375f, 0.5f, 0.15625f, 0};
+        for (int k = 0; k < 9; ++k)
+            assert(fabsf(proto_fermat_parabolic_progress(times[k], speed) -
+                         expected[k]) < 0.0001f);
+        assert(proto_fermat_parabolic_progress(9.0f, 0.0f) == 1.0f);
+        /* Three displacements over equal time intervals; middle is fastest. */
+        assert(expected[2] - expected[1] > expected[1] - expected[0]);
+        assert(expected[4] - expected[3] < expected[3] - expected[2]);
+
+        const float span = 29.75f, amp = 15.0f, centre = span * 0.5f;
+        float radii[4];
+        for (int i = 0; i < 4; ++i) {
+            float x, y;
+            proto_fermat_spiral_point(0.12f, 0.0f, span,
+                amp * (float)(i+1) * 0.25f, 1.0f, &x, &y);
+            assert(fabsf(y) < 0.0001f);
+            radii[i] = centre - x;
+        }
+        assert(radii[1] > 1.9f * radii[0]);
+        assert(radii[2] > 1.4f * radii[1]);
+        assert(radii[3] > 1.28f * radii[2]);
+        assert(radii[3] > 0.47f * span && radii[3] < 0.5f * span);
+        /* The connector-to-spiral tangent and curvature flatten at the root. */
+        for (int k = 1; k <= 3; ++k) {
+            float x, y;
+            proto_fermat_spiral_point(0.12f + 0.0001f*k, 0.0f,
+                                      span, amp, 1.0f, &x, &y);
+            assert(fabsf(y) < 0.001f);
+        }
+
+        ProtoConfig cfg21;
+        ProtoAnimation anim21;
+        ProtoFrame flat21, peak21, middle21, returning21, end21;
+        proto_config_defaults(&cfg21);
+        cfg21.section_count = 2;
+        cfg21.rotation_speed = 0.0f;
+        cfg21.sections[0].formula = PROTO_STRAIGHT;
+        cfg21.sections[1].formula = PROTO_FERMAT_SPIRAL;
+        cfg21.sections[1].amplitude = amp;
+        cfg21.sections[1].cycles = 4.0f;
+        cfg21.sections[1].gap_pixels = 0.25f;
+        cfg21.sections[1].repeat_visible = true;
+        cfg21.sections[1].animated = false;
+        cfg21.sections[1].phase_speed = speed;
+        proto_animation_init(&anim21, &cfg21);
+        anim21.time = 0.0f;
+        proto_make_frame(&cfg21, &anim21, &flat21);
+        anim21.time = 4.5f;
+        proto_make_frame(&cfg21, &anim21, &middle21);
+        anim21.time = 9.0f;
+        proto_make_frame(&cfg21, &anim21, &peak21);
+        anim21.time = 13.5f;
+        proto_make_frame(&cfg21, &anim21, &returning21);
+        anim21.time = 18.0f;
+        proto_make_frame(&cfg21, &anim21, &end21);
+        float cell_max[4] = {0};
+        for (int k = 0; k < PROTO_PROFILE_SAMPLES; ++k) {
+            const float base = -168.0f + 336.0f * k / (PROTO_PROFILE_SAMPLES - 1);
+            assert(fabsf(flat21.offsets[k]) < 0.002f);
+            assert(fabsf(end21.offsets[k]) < 0.002f);
+            assert(fabsf(middle21.offsets[k] - returning21.offsets[k]) < 0.002f);
+            assert(fabsf(middle21.x_coords[k] - returning21.x_coords[k]) < 0.002f);
+            if (base >= 0.0f && base < 120.0f) {
+                int i = (int)(base / 30.0f);
+                if (i > 3) i = 3;
+                cell_max[i] = fmaxf(cell_max[i], fabsf(peak21.offsets[k]));
+            }
+        }
+        assert(cell_max[0] > 0.15f);
+        for (int k = 1; k < 4; ++k)
+            assert(cell_max[k] > cell_max[k-1] * 1.15f);
+    }
+
     puts("curve_math: ok");
     return 0;
 }

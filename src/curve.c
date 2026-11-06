@@ -380,11 +380,12 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
         return;
     }
     if (s->formula == PROTO_FERMAT_SPIRAL) {
-        /* 0 -> full 3*pi (9s) -> zero (18s). Static hold for speed=0. */
-        const float progress = s->phase_speed == 0.0f ? 1.0f :
-            0.5f - 0.5f * cosf(2.0f * PROTO_PI * s->phase_speed * t);
+        /* Every coil uses the SAME parabolic-speed 18-second clock;
+         * only amplitude grows 25/50/75/100% from centre to outside. */
+        const float grade = (float)(index + 1) / (float)n;
+        const float progress = proto_fermat_parabolic_progress(t, s->phase_speed);
         proto_fermat_spiral_point(p, cell_start, length,
-                                  s->amplitude, progress, x, y);
+                                  s->amplitude * grade, progress, x, y);
         return;
     }
     if (s->formula == PROTO_WOLFRAM_HALFTURN) {
