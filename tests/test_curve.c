@@ -439,6 +439,53 @@ int main(void) {
                 assert(isfinite(proto_signed_side(&peak, x + 0.5f, y + 0.5f)));
     }
 
+    /* Patch 0014: exact Wolfram t=0..0.5 arc, centred with straight joins. */
+    {
+        ProtoFormula found;
+        assert(proto_parse_formula("wolfram_halfturn", &found));
+        assert(found == PROTO_WOLFRAM_HALFTURN);
+        const float cell = 28.0f, radius = 6.0f;
+        float x, y;
+        proto_wolfram_halfturn_point(0.0f, 0, cell, radius, 1, &x, &y);
+        assert(fabsf(x) < 1.0e-4f && fabsf(y) < 1.0e-4f);
+        proto_wolfram_halfturn_point(1.0f, 0, cell, radius, 1, &x, &y);
+        assert(fabsf(x-cell) < 1.0e-4f && fabsf(y) < 1.0e-4f);
+        proto_wolfram_halfturn_point(0.12f, 0, cell, radius, 1, &x, &y);
+        assert(fabsf(x - (0.5f*cell + radius)) < 1.0e-3f);
+        assert(fabsf(y) < 1.0e-3f);
+        proto_wolfram_halfturn_point(0.88f, 0, cell, radius, 1, &x, &y);
+        assert(fabsf(x - (0.5f*cell - 0.25f*radius)) < 1.0e-3f);
+        assert(fabsf(y) < 1.0e-3f);
+        const float t = 0.25f;
+        const float p = 0.12f + (0.88f-0.12f) * (t / 0.5f);
+        proto_wolfram_halfturn_point(p, 0, cell, radius, 1, &x, &y);
+        assert(fabsf(x - (0.5f*cell + radius*0.5625f*cosf(6.0f*3.14159265f*t))) < 0.001f);
+        assert(fabsf(y - (radius*0.5625f*sinf(6.0f*3.14159265f*t))) < 0.001f);
+        for (int k = 0; k <= 100; ++k) {
+            const float sample = (float)k / 100;
+            proto_wolfram_halfturn_point(sample, 0, cell, radius, 0, &x, &y);
+            assert(fabsf(x - cell*sample) < 0.001f && fabsf(y) < 0.001f);
+        }
+        ProtoConfig test_cfg;
+        ProtoAnimation test_anim;
+        ProtoFrame test_frame;
+        proto_config_defaults(&test_cfg);
+        test_cfg.section_count = 2;
+        test_cfg.sections[0].formula = PROTO_STRAIGHT;
+        test_cfg.sections[1].formula = PROTO_WOLFRAM_HALFTURN;
+        test_cfg.sections[1].amplitude = 8;
+        test_cfg.sections[1].cycles = 4;
+        test_cfg.sections[1].gap_pixels = 0.35f;
+        test_cfg.sections[1].repeat_visible = true;
+        test_cfg.sections[1].animated = false;
+        test_cfg.sections[1].phase_speed = 0;
+        proto_animation_init(&test_anim, &test_cfg);
+        proto_make_frame(&test_cfg, &test_anim, &test_frame);
+        assert(test_frame.parametric);
+        for (int y0 = 0; y0 < PROTO_HEIGHT; y0 += 9)
+            for (int x0 = 0; x0 < PROTO_WIDTH; x0 += 9)
+                assert(isfinite(proto_signed_side(&test_frame, x0 + .5f, y0 + .5f)));
+    }
     puts("curve_math: ok");
     return 0;
 }

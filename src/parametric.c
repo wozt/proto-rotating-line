@@ -83,6 +83,36 @@ void proto_tentacle_gradient_point(float u, float start, float span,
     *y = py;
 }
 
+/* Wolfram Alpha: {(1-t)^2 cos(6*pi*t), (1-t)^2 sin(6*pi*t)},
+ * t in [0,0.5].  The inner arc is EXACTLY this function, only translated
+ * and uniformly scaled to fit a cell; the two baseline connectors are separate.
+ * strength=0 yields a straight divider; strength=1 yields the full curve. */
+void proto_wolfram_halfturn_point(float p, float cell_start,
+                                  float cell_span, float amplitude,
+                                  float strength, float *x, float *y) {
+    p = fmaxf(0.0f, fminf(1.0f, p));
+    strength = fmaxf(0.0f, fminf(1.0f, strength));
+    const float lead = 0.12f, finish = 0.88f;
+    const float centre_x = 0.5f * cell_span;
+    const float scale = fminf(fmaxf(0.0f, amplitude), 0.42f * cell_span);
+    const float baseline_x = p * cell_span;
+    float shape_x, shape_y = 0.0f;
+    if (p <= lead) {
+        shape_x = (centre_x + scale) * (p / lead);
+    } else if (p < finish) {
+        const float t = 0.5f * (p - lead) / (finish - lead);
+        const float r = (1.0f - t) * (1.0f - t);
+        shape_x = centre_x + scale * r * cosf(6.0f * PI * t);
+        shape_y = scale * r * sinf(6.0f * PI * t);
+    } else {
+        const float q = (p - finish) / (1.0f - finish);
+        const float last_x = centre_x - 0.25f * scale;
+        shape_x = last_x + (cell_span - last_x) * q;
+    }
+    *x = cell_start + baseline_x + strength * (shape_x - baseline_x);
+    *y = strength * shape_y;
+}
+
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES - 1; ++i) {

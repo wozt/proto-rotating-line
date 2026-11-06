@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -344,6 +344,7 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
         return;
     }
     bool repeated = s->formula == PROTO_SPIRAL ||
+                    s->formula == PROTO_WOLFRAM_HALFTURN ||
         ((s->repeat_visible || s->gap_pixels > 0.0f) &&
          (s->formula == PROTO_SINE || s->formula == PROTO_LIGHTNING ||
           s->formula == PROTO_TRIANGLE));
@@ -365,6 +366,14 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
     if (local <= start_local || local >= start_local + length) return;
     float p = (local - start_local) / length;
     float cell_start = start + index * cell + start_local;
+    if (s->formula == PROTO_WOLFRAM_HALFTURN) {
+        /* phase_speed=0: exact static arc. Otherwise breathe in/out. */
+        const float strength = s->phase_speed == 0.0f ? 1.0f :
+            0.5f - 0.5f * cosf(2.0f * PROTO_PI * s->phase_speed * t);
+        proto_wolfram_halfturn_point(p, cell_start, length,
+                                     s->amplitude, strength, x, y);
+        return;
+    }
     if (s->formula == PROTO_SPIRAL) {
         /* Contract both spiral dimensions inside the original motif. */
         const float scale = s->spiral_scale > 0.0f ?
@@ -461,7 +470,8 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
     /* Curled spatial motifs can double back along x; always use the
      * parametric crossing classifier for the wave half-line. */
     for (int side = 0; side < config->section_count; ++side)
-        if (config->sections[side].formula == PROTO_SPATIAL_WAVE)
+        if (config->sections[side].formula == PROTO_SPATIAL_WAVE ||
+            config->sections[side].formula == PROTO_WOLFRAM_HALFTURN)
             frame->parametric = true;
     if (frame->parametric) proto_parametric_prepare(frame);
 }
