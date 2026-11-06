@@ -222,6 +222,21 @@ int main(void) {
         remove(path);
     }
 #endif
+#ifdef PROTO_FERMAT_TENTACLE_CFG
+    {
+        ProtoConfig fern, readback;
+        proto_config_defaults(&fern);
+        assert(proto_config_load(PROTO_FERMAT_TENTACLE_CFG, &fern, error, sizeof error));
+        assert(fern.section_count == 2 && !fern.show_divider);
+        assert(fern.sections[1].formula == PROTO_FERMAT_SPIRAL);
+        assert(fabsf(fern.sections[1].amplitude - 12.0f) < 0.01f);
+        assert(proto_config_save(path, &fern, error, sizeof error));
+        proto_config_defaults(&readback);
+        assert(proto_config_load(path, &readback, error, sizeof error));
+        assert(readback.sections[1].formula == PROTO_FERMAT_SPIRAL);
+        remove(path);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

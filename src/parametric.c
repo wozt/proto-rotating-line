@@ -488,37 +488,49 @@ void proto_fermat_spiral_point(float p, float cell_start, float cell_span,
     p = fmaxf(0.0f, fminf(1.0f, p));
     progress = fmaxf(0.0f, fminf(1.0f, progress));
     const float centre = cell_start + 0.5f * cell_span;
-    const float full_theta = 3.0f * PI;
-    const float theta_max = full_theta * progress;
     const float max_radius = fminf(fmaxf(0.0f, amplitude), 0.45f * cell_span);
-    const float outer_radius = max_radius * sqrtf(progress);
+    const float outer_radius = max_radius * powf(progress, 0.58f);
+    const float theta_max = 7.0f * PI * powf(progress, 1.18f);
     const float lead = 0.12f, trail = 0.88f;
 
     *y = 0.0f;
+    if (progress <= 0.0001f || theta_max <= 0.0001f || outer_radius <= 0.0001f) {
+        *x = cell_start + p * cell_span;
+        return;
+    }
+
     if (p <= lead) {
         *x = cell_start + (centre - outer_radius - cell_start) * (p / lead);
         return;
     }
     if (p >= trail) {
-        const float u = (p-trail)/(1.0f-trail);
+        const float u = (p - trail) / (1.0f - trail);
         *x = centre + outer_radius +
              (cell_start + cell_span - centre - outer_radius) * u;
         return;
     }
 
-    float theta, side;
+    float arm_u, side;
     if (p <= 0.5f) {
-        theta = theta_max * (0.5f-p)/(0.5f-lead);
+        arm_u = (p - lead) / (0.5f - lead);      /* 0 at base, 1 at tip */
         side = -1.0f;
     } else {
-        theta = theta_max * (p-0.5f)/(trail-0.5f);
+        arm_u = (trail - p) / (trail - 0.5f);    /* 0 at base, 1 at tip */
         side = 1.0f;
     }
-    const float radius = max_radius * sqrtf(theta / full_theta);
-    const float phase = theta - theta_max;
+    arm_u = fmaxf(0.0f, fminf(1.0f, arm_u));
+
+    /* Broad near the base, strongly tapered near the tip. */
+    const float radius = outer_radius * powf(1.0f - arm_u, 0.58f);
+
+    /* Curl is concentrated near the tip to avoid a teardrop silhouette. */
+    const float turn_mix = powf(arm_u, 2.35f);
+    const float phase = -theta_max * turn_mix;
+
     *x = centre + side * radius * cosf(phase);
     *y = side * radius * sinf(phase);
 }
+
 
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);

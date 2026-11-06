@@ -763,6 +763,18 @@ int main(void) {
         assert(changed > 20);
     }
 
+    /* Patch 0020: tentacle profile keeps broad base and sharper curled tip. */
+    {
+        const float start = 3.0f, span = 30.0f, amp = 12.0f;
+        float x, y;
+        proto_fermat_spiral_point(0.20f, start, span, amp, 1.0f, &x, &y);
+        const float near_base_y = fabsf(y);
+        proto_fermat_spiral_point(0.44f, start, span, amp, 1.0f, &x, &y);
+        const float near_tip_y = fabsf(y);
+        assert(near_tip_y > near_base_y * 0.55f);
+        proto_fermat_spiral_point(0.49f, start, span, amp, 1.0f, &x, &y);
+        assert(hypotf(x - (start + 0.5f*span), y) < 2.0f);
+    }
     puts("curve_math: ok");
     return 0;
 }
