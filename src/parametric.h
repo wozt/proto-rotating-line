@@ -41,6 +41,14 @@ float proto_fermat_stagger_progress(float time, float speed,
 float proto_fermat_bothways_progress(float time, float speed,
                                     int from_centre, float delay);
 float proto_fermat_tall_reference_peak(int from_centre);
+float proto_fermat_round_grade(int index);
+float proto_fermat_round_radius(int index, float amplitude);
+float proto_fermat_round_center(float start, float span, int index,
+                                float amplitude);
+void proto_fermat_round_point(float p, float packed_start, float packed_span,
+                              float section_start, float section_span,
+                              int index, float amplitude, float progress,
+                              float direction, float *x, float *y);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif

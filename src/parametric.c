@@ -749,6 +749,76 @@ float proto_fermat_tall_reference_peak(int from_centre) {
     return cached[from_centre];
 }
 
+/* Patch 0031: dramatic eight-step radial sizes, centre -> exterior.
+ * The user supplied seven percentages for eight positions; 40% fills the missing step.
+ * These are true two-dimensional sizes, not separate x/y multipliers. */
+float proto_fermat_round_grade(int index) {
+    static const float steps[8] = {0.10f, 0.15f, 0.21f, 0.32f,
+                                   0.40f, 0.50f, 0.70f, 1.00f};
+    if (index < 0) index = 0;
+    if (index > 7) index = 7;
+    return steps[index];
+}
+
+/* Radius needed to obtain a target height. The reference max is obtained
+ * directly from the UNCHANGED softened Fermat curve for this winding level. */
+float proto_fermat_round_radius(int index, float amplitude) {
+    const float target_y = 40.0f * proto_fermat_round_grade(index) *
+                           fmaxf(0.0f, amplitude) / 15.0f;
+    return target_y / proto_fermat_tall_reference_peak(index);
+}
+
+/* Ordered centres, compressed to keep the largest circle on screen at zero
+ * rotation. Overlap is inevitable for eight large round circles in 120px;
+ * the original packed-cell boundaries still define their flat endpoints. */
+float proto_fermat_round_center(float start, float span, int index,
+                                float amplitude) {
+    if (index < 0) index = 0;
+    if (index > 7) index = 7;
+    float c0, w0, c7, w7, ci, wi;
+    proto_fermat_packed_cell(start, span, 8, 0, &c0, &w0);
+    proto_fermat_packed_cell(start, span, 8, 7, &c7, &w7);
+    proto_fermat_packed_cell(start, span, 8, index, &ci, &wi);
+    c0 += .5f*w0;
+    c7 += .5f*w7;
+    ci += .5f*wi;
+    const float fraction = (ci-c0) / fmaxf(1.0e-4f, c7-c0);
+    const float first = start + proto_fermat_round_radius(0, amplitude);
+    const float last = start + span - proto_fermat_round_radius(7, amplitude);
+    return first + (last-first) * fraction;
+}
+
+/* The actual coil is an ISOTROPIC transform of the existing Fermat curve.
+ * Unlike patch 0030, BOTH x and y use the same scale. The smooth mask on
+ * the short horizontal connectors ensures p=0 and p=1 still equal the
+ * original neighbouring segment boundaries at every phase of animation. */
+void proto_fermat_round_point(float p, float packed_start, float packed_span,
+                              float section_start, float section_span,
+                              int index, float amplitude, float progress,
+                              float direction, float *x, float *y) {
+    p = fminf(1.0f, fmaxf(0.0f, p));
+    progress = fminf(1.0f, fmaxf(0.0f, progress));
+    const float old_centre = packed_start + .5f*packed_span;
+    const float base_radius = .5f*packed_span;
+    const float winding = .25f+.75f*(float)index/7.0f;
+    float old_x, old_y;
+    proto_fermat_twist_point(p, packed_start, packed_span, base_radius,
+                            progress, winding, direction, &old_x, &old_y);
+    const float scale = proto_fermat_round_radius(index, amplitude) /
+                        fmaxf(base_radius, 1.0e-5f);
+    const float target_centre = proto_fermat_round_center(section_start,
+                                   section_span, index, amplitude);
+    const float left_t = fminf(1.0f, p/.20f);
+    const float right_t = fminf(1.0f, (1.0f-p)/.20f);
+    const float left_w = left_t*left_t*(3.0f-2.0f*left_t);
+    const float right_w = right_t*right_t*(3.0f-2.0f*right_t);
+    const float blend = progress*left_w*right_w;
+    const float ratio = 1.0f + blend*(scale-1.0f);
+    *x = old_centre + blend*(target_centre-old_centre) +
+         (old_x-old_centre)*ratio;
+    *y = old_y*ratio;
+}
+
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES - 1; ++i) {

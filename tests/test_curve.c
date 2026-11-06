@@ -1256,5 +1256,71 @@ int main(void) {
         assert(lightning_early > 3 && lightning_late == 0);
     }
 
+    /* Patch 0031: no x-only/y-only stretching of the eight Aria coils. */
+    {
+        ProtoFormula f31;
+        assert(proto_parse_formula("fermat_round", &f31));
+        assert(f31 == PROTO_FERMAT_ROUND);
+        const float sizes[8] = {.10f,.15f,.21f,.32f,.40f,.50f,.70f,1.0f};
+        float centres[8], heights[8];
+        for (int i = 0; i < 8; ++i) {
+            assert(fabsf(proto_fermat_round_grade(i)-sizes[i]) < .00001f);
+            float start, span;
+            proto_fermat_packed_cell(0.0f, 120.0f, 8, i, &start, &span);
+            centres[i] = proto_fermat_round_center(0.0f, 120.0f, i, 15.0f);
+            if (i) assert(centres[i] > centres[i-1]);
+            float max_y = 0.0f;
+            for (int k = 0; k <= 2048; ++k) {
+                const float p = (float)k/2048.0f;
+                float x, y;
+                proto_fermat_round_point(p,start,span,0.0f,120.0f,i,
+                                         15.0f,1.0f,1.0f,&x,&y);
+                assert(isfinite(x) && isfinite(y));
+                max_y = fmaxf(max_y,fabsf(y));
+                if (k == 0) assert(fabsf(x-start) < .0001f && fabsf(y) < .0001f);
+                if (k == 2048) assert(fabsf(x-(start+span)) < .0001f && fabsf(y) < .0001f);
+            }
+            heights[i] = 2.0f*max_y;
+            assert(fabsf(heights[i]-80.0f*sizes[i]) < .30f);
+            if (i) assert(heights[i] > heights[i-1]);
+            /* Full-width vs height of the original Fermat is preserved:
+             * two sample displacement vectors get the same x/y scale. */
+            float a1x,a1y,a2x,a2y,b1x,b1y,b2x,b2y;
+            const float winding = .25f+.75f*i/7.0f;
+            proto_fermat_twist_point(.35f,start,span,.5f*span,
+                                     1.0f,winding,1.0f,&a1x,&a1y);
+            proto_fermat_twist_point(.42f,start,span,.5f*span,
+                                     1.0f,winding,1.0f,&a2x,&a2y);
+            proto_fermat_round_point(.35f,start,span,0.0f,120.0f,
+                                     i,15.0f,1.0f,1.0f,&b1x,&b1y);
+            proto_fermat_round_point(.42f,start,span,0.0f,120.0f,
+                                     i,15.0f,1.0f,1.0f,&b2x,&b2y);
+            const float r = proto_fermat_round_radius(i,15.0f)/(.5f*span);
+            assert(fabsf((b1x-b2x)-(a1x-a2x)*r) < .001f);
+            assert(fabsf(b1y-a1y*r) < .001f);
+            assert(fabsf(b2y-a2y*r) < .001f);
+        }
+        assert(heights[7] > 79.7f && heights[7] < 80.3f);
+        assert(heights[0] < 9.0f);
+        assert(centres[7]+proto_fermat_round_radius(7,15.0f) <= 120.001f);
+        assert(centres[0]-proto_fermat_round_radius(0,15.0f) >= -.001f);
+        for (int i=0; i<8; ++i) {
+            const float speed=.2f;
+            assert(fabsf(proto_fermat_bothways_progress(2.5f,speed,i,.2f)-1.0f)<.0001f);
+            assert(fabsf(proto_fermat_bothways_progress(5.0f,speed,i,.2f))<.0001f);
+        }
+        /* Inactive means exactly straight; clockwise/counterclockwise mirrors. */
+        float st, sp, ax, ay, bx, by;
+        proto_fermat_packed_cell(0.0f,120.0f,8,7,&st,&sp);
+        proto_fermat_round_point(.32f,st,sp,0.0f,120.0f,7,15.0f,
+                                 0.0f,1.0f,&ax,&ay);
+        assert(fabsf(ax-(st+.32f*sp))<.0001f && fabsf(ay)<.0001f);
+        proto_fermat_round_point(.38f,st,sp,0.0f,120.0f,7,15.0f,
+                                 1.0f,1.0f,&ax,&ay);
+        proto_fermat_round_point(.38f,st,sp,0.0f,120.0f,7,15.0f,
+                                 1.0f,-1.0f,&bx,&by);
+        assert(fabsf(ax-bx)<.001f && fabsf(ay+by)<.001f);
+    }
+
     return 0;
 }

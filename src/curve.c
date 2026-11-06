@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "fermat_tall", "metroid_eight", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "fermat_tall", "metroid_eight", "fermat_round", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -391,6 +391,32 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
               0.11f*pulse*sinf(50.0f*signal_x+8.0f*PROTO_PI*pulse_age/0.24f));
         return;
     }
+    if (s->formula == PROTO_FERMAT_ROUND) {
+        /* Patch 0031: eight genuinely round coils with extreme size steps.
+         * Independent winding 25%..100%, same delayed five-second clock. */
+        if (s->cycles < 7.5f || s->cycles > 8.5f) return;
+        for (int i = 0; i < 8; ++i) {
+            float packed_start, packed_span;
+            proto_fermat_packed_cell(start, span, 8, i, &packed_start, &packed_span);
+            if (baseline < packed_start - 0.0002f ||
+                baseline > packed_start + packed_span + 0.0002f) continue;
+            const float p = fminf(1.0f, fmaxf(0.0f,
+                                         (baseline-packed_start)/packed_span));
+            const float growth = proto_fermat_bothways_progress(t, s->phase_speed,
+                                                                 i, 0.2f);
+            const float direction = proto_fermat_twist_direction(t, s->phase_speed) *
+                                    ((i & 1) ? -1.0f : 1.0f);
+            proto_fermat_round_point(p, packed_start, packed_span,
+                                     start, span, i, s->amplitude,
+                                     growth, direction, x, y);
+            /* Retain the momentary X-key ripple. The longer animation
+             * keeps its exact isotropic round geometry outside pulses. */
+            if (pulse_age >= 0.0f && pulse_age < 0.24f)
+                proto_fermat_impulse(x, y, packed_start, packed_span, p, pulse_age);
+            return;
+        }
+        return;
+    }
     if (s->formula == PROTO_FERMAT_TALL) {
         /* Packed x-centres, but exponentially growing vertical extent.
          * This deliberately decouples screen height from packed cell width. */
@@ -619,6 +645,7 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
                     next.formula == PROTO_SPIRAL ? blend : 1.0f,
                     next.formula == PROTO_FERMAT_TWIST ? animation->aria_pulse_age :
                     next.formula == PROTO_FERMAT_TALL ? animation->aria_pulse_age :
+                    next.formula == PROTO_FERMAT_ROUND ? animation->aria_pulse_age :
                     next.formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age :
                     next.formula == PROTO_METROID_EIGHT ? animation->metroid_pulse_age : -1.0f,
                     &xn, &yn);
@@ -626,6 +653,7 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
                     previous->formula == PROTO_SPIRAL ? 1.0f - blend : 1.0f,
                     previous->formula == PROTO_FERMAT_TWIST ? animation->aria_pulse_age :
                     previous->formula == PROTO_FERMAT_TALL ? animation->aria_pulse_age :
+                    previous->formula == PROTO_FERMAT_ROUND ? animation->aria_pulse_age :
                     previous->formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age :
                     previous->formula == PROTO_METROID_EIGHT ? animation->metroid_pulse_age : -1.0f,
                     &xp, &yp);
@@ -661,6 +689,9 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
             frame->parametric = true;
     for (int side = 0; side < config->section_count; ++side)
         if (config->sections[side].formula == PROTO_FERMAT_TALL)
+            frame->parametric = true;
+    for (int side = 0; side < config->section_count; ++side)
+        if (config->sections[side].formula == PROTO_FERMAT_ROUND)
             frame->parametric = true;
     if (frame->parametric) proto_parametric_prepare(frame);
     proto_wolfram_ribbon_prepare(frame, config, animation);

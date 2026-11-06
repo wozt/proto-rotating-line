@@ -341,6 +341,25 @@ int main(void) {
         assert(fabsf(c30.sections[1].phase_speed-.2f)<.0001f);
     }
 #endif
+#ifdef PROTO_ARIA_METROID_ROUND_CFG
+    {
+        ProtoConfig round31, second31;
+        proto_config_defaults(&round31);
+        assert(proto_config_load(PROTO_ARIA_METROID_ROUND_CFG, &round31,
+                                 error, sizeof error));
+        assert(round31.section_count == 2 && !round31.show_divider);
+        assert(round31.sections[0].formula == PROTO_METROID_EIGHT);
+        assert(round31.sections[1].formula == PROTO_FERMAT_ROUND);
+        assert(fabsf(round31.sections[0].amplitude - 30.0f) < .0001f);
+        assert(round31.sections[1].cycles == 8.0f);
+        assert(fabsf(round31.sections[1].amplitude-15.0f)<.0001f);
+        assert(proto_config_save(path, &round31, error, sizeof error));
+        proto_config_defaults(&second31);
+        assert(proto_config_load(path, &second31, error, sizeof error));
+        assert(second31.sections[1].formula == PROTO_FERMAT_ROUND);
+        remove(path);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }
