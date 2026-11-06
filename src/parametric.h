@@ -32,6 +32,9 @@ void proto_fermat_twist_point(float p, float cell_start,
                               float cell_span, float amplitude,
                               float progress, float winding,
                               float direction, float *x, float *y);
+/* Peak-radius-weighted positions for eight Fermat twists. */
+void proto_fermat_packed_cell(float start, float span, int count, int index,
+                              float *cell_start, float *cell_span);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif

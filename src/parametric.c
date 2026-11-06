@@ -584,7 +584,8 @@ void proto_fermat_twist_point(float p, float cell_start, float cell_span,
     progress = fmaxf(0.0f, fminf(1.0f, progress));
     winding = fmaxf(0.0f, fminf(1.0f, winding));
     const float centre = cell_start + 0.5f * cell_span;
-    const float max_radius = fminf(fmaxf(amplitude, 0.0f), 0.49f * cell_span);
+    /* Allow roots to touch exactly at full extension. */
+    const float max_radius = fminf(fmaxf(amplitude, 0.0f), 0.50f * cell_span);
     const float outer_radius = max_radius * powf(progress, 0.58f);
     const float theta_max = 7.0f * PI * powf(progress, 1.18f) * winding;
     /* Wide shoulders and zero endpoint tangents, rather than two joined
@@ -641,6 +642,30 @@ void proto_fermat_twist_point(float p, float cell_start, float cell_span,
     *y = side * radius * sinf(angle);
 }
 
+
+/* Peak-radius-weighted packed layout for Fermat twists.
+ * Eight weights are 0.5, 0.5+0.5/7, ..., 1.0; their sum is 6.
+ * Prefix sums produce shared boundaries (the same formula for both cells)
+ * instead of accumulating rounded fixed-size centre positions. */
+void proto_fermat_packed_cell(float start, float span, int count, int index,
+                              float *cell_start, float *cell_span) {
+    if (count < 2) {
+        *cell_start = start;
+        *cell_span = span;
+        return;
+    }
+    const double d = (double)(count - 1);
+    const double i = (double)index;
+    const double total = 0.75 * (double)count;
+    const double before = (0.5 * i + 0.25 * i * (i - 1.0) / d) / total;
+    const double after = (0.5 * (i + 1.0) +
+                          0.25 * i * (i + 1.0) / d) / total;
+    const float left = start + (float)((double)span * before);
+    const float right = index == count - 1 ? start + span :
+                        start + (float)((double)span * after);
+    *cell_start = left;
+    *cell_span = right - left;
+}
 
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);

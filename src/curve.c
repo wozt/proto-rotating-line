@@ -361,6 +361,31 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
     int n = (int)lroundf(s->cycles);
     if (n < 1) n = 1;
     if (n > 16) n = 16;
+    /* Patch 0027: pack eight Fermat twists according to their peak diameters. */
+    if (s->formula == PROTO_FERMAT_TWIST && n == 8) {
+        /* Distinct cell widths: 50/57.14/.../100% of the outermost.
+         * The max of each spiral touches its neighbours at the roots. */
+        const float position = fminf(span, fmaxf(0.0f, u * span));
+        for (int packed_index = 0; packed_index < n; ++packed_index) {
+            float packed_start, packed_span;
+            proto_fermat_packed_cell(start, span, n, packed_index,
+                                     &packed_start, &packed_span);
+            if (position > packed_start + packed_span - start &&
+                packed_index != n - 1) continue;
+            const float p = (start + position - packed_start) / packed_span;
+            const float outward = (float)packed_index / (float)(n - 1);
+            const float winding = 0.25f + 0.75f * outward;
+            const float radius = fminf(fmaxf(s->amplitude, 0.0f),
+                                       0.50f * packed_span);
+            const float progress = proto_fermat_twist_progress(t, s->phase_speed);
+            const float direction = proto_fermat_twist_direction(t, s->phase_speed) *
+                                    ((packed_index & 1) ? -1.0f : 1.0f);
+            proto_fermat_twist_point(p, packed_start, packed_span,
+                                    radius, progress, winding, direction, x, y);
+            return;
+        }
+        return;
+    }
     float cell = span / n;
     float gap = fminf(s->gap_pixels, cell * 0.65f);
     float scaled = u * n;
@@ -381,12 +406,15 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
         return;
     }
     if (s->formula == PROTO_FERMAT_TWIST) {
-        /* Patch 0024: two independent spatial gradients, one common clock:
-         * size 100/85/70/55%, winding 25/50/75/100%. Both index parity
-         * and 5-second cycle parity flip the rotation direction. */
-        const float winding = fminf(1.0f, 0.25f * (float)(index + 1));
-        const float size_grade = fmaxf(0.10f, 1.0f - 0.15f * (float)index);
-        const float max_radius = fminf(s->amplitude, 0.49f * length);
+        /* Patch 0025: six outward-growing coils, separate size and winding. */
+        /* Interpolate to 100% from centre to outside, independently of
+         * the common fast 5-second motion. n is the local motif count. */
+        const float outward = n > 1 ? (float)index / (float)(n - 1) : 1.0f;
+        const float size_grade = 0.50f + 0.50f * outward;
+        const float winding = 0.25f + 0.75f * outward;
+        /* Clamp the full-size radius FIRST; otherwise six short cells
+         * saturate to the same outer radius and lose the visual gradient. */
+        const float max_radius = fminf(fmaxf(s->amplitude, 0.0f), 0.49f * length);
         const float progress = proto_fermat_twist_progress(t, s->phase_speed);
         const float direction = proto_fermat_twist_direction(t, s->phase_speed) *
                                 ((index & 1) ? -1.0f : 1.0f);

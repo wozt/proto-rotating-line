@@ -267,6 +267,49 @@ int main(void) {
         remove(path);
     }
 #endif
+#ifdef PROTO_FERMAT_TWIST_6X_CFG
+    {
+        ProtoConfig six, again;
+        proto_config_defaults(&six);
+        assert(proto_config_load(PROTO_FERMAT_TWIST_6X_CFG,
+                                 &six, error, sizeof error));
+        assert(six.section_count == 2 && !six.show_divider);
+        assert(six.sections[0].formula == PROTO_SPATIAL_LIGHTNING);
+        assert(six.sections[0].cycles == 4.0f);
+        assert(six.sections[1].formula == PROTO_FERMAT_TWIST);
+        assert(six.sections[1].cycles == 6.0f);
+        assert(fabsf(six.sections[1].phase_speed - .2f) < .0001f);
+        assert(six.sections[1].repeat_visible);
+        assert(proto_config_save(path, &six, error, sizeof error));
+        proto_config_defaults(&again);
+        assert(proto_config_load(path, &again, error, sizeof error));
+        assert(again.sections[1].cycles == 6.0f);
+        assert(again.sections[1].formula == PROTO_FERMAT_TWIST);
+        remove(path);
+    }
+#endif
+#ifdef PROTO_FERMAT_PACKED_8X_CFG
+    {
+        ProtoConfig eight, again;
+        proto_config_defaults(&eight);
+        assert(proto_config_load(PROTO_FERMAT_PACKED_8X_CFG,
+                                 &eight, error, sizeof error));
+        assert(eight.section_count == 2 && !eight.show_divider);
+        assert(eight.sections[0].formula == PROTO_SPATIAL_LIGHTNING);
+        assert(eight.sections[0].cycles == 4.0f);
+        assert(eight.sections[1].formula == PROTO_FERMAT_TWIST);
+        assert(eight.sections[1].cycles == 8.0f);
+        assert(eight.sections[1].gap_pixels == 0.0f);
+        assert(fabsf(eight.sections[1].phase_speed - .2f) < .0001f);
+        assert(eight.sections[1].repeat_visible);
+        assert(proto_config_save(path, &eight, error, sizeof error));
+        proto_config_defaults(&again);
+        assert(proto_config_load(path, &again, error, sizeof error));
+        assert(again.sections[1].cycles == 8.0f);
+        assert(again.sections[1].formula == PROTO_FERMAT_TWIST);
+        remove(path);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }
