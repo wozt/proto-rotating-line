@@ -1603,6 +1603,42 @@ int main(void) {
         assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
     }
 
+    /* Patch 0043: first three Metroid teeth must have perfectly clean valleys.
+     * No extra extrema or curvature in the negative trough; the two signs
+     * remain balanced. Later teeth retain their intentional electricity. */
+    {
+        const float p_breaks[]={0.0f,0.125f,0.5f,0.875f,1.0f};
+        const float expected[]={0.0f,-1.0f,1.0f,-1.0f,0.0f};
+        for(int tooth=0; tooth<3; ++tooth) {
+            for(int j=0; j<5; ++j) {
+                const float got=proto_metroid_bipolar_value(tooth,p_breaks[j]);
+                assert(fabsf(got-expected[j])<.0001f);
+            }
+            for(int seg=0; seg<4; ++seg) {
+                const float a=p_breaks[seg], b=p_breaks[seg+1];
+                for(int j=1;j<20;++j) {
+                    const float p=a+(b-a)*(float)j/20.0f;
+                    const float linear=expected[seg]+(expected[seg+1]-expected[seg])*
+                        ((p-a)/(b-a));
+                    const float got=proto_metroid_bipolar_value(tooth,p);
+                    assert(isfinite(got));
+                    assert(fabsf(got-linear)<.0002f);
+                    assert(fabsf(got-proto_metroid_bipolar_value(tooth,1.0f-p))<.0002f);
+                }
+            }
+        }
+        /* Tooth 4 keeps the original, slightly irregular electrical signal. */
+        float max_difference=0.0f;
+        for(int j=1;j<100;++j) {
+            const float p=(float)j/100.0f;
+            const float v=fminf(p,1.0f-p);
+            const float simple=v<=.125f ? -v/.125f : -1.0f+2.0f*(v-.125f)/.375f;
+            max_difference=fmaxf(max_difference,
+                                 fabsf(proto_metroid_bipolar_value(3,p)-simple));
+        }
+        assert(max_difference>.08f);
+    }
+
     /* Patch 0041: button-wave timing derives only from audio length. */
     {
         const float lengths[] = { .22f, .11f, .44f, .67f };
