@@ -48,6 +48,12 @@ static void proto_trigger_pulse(ProtoAnimation *animation, SDL_AudioStream *soun
     for (int j = 6; j > 0; --j) history[j] = history[j-1];
     history[0] = *current;
     *current = 0.0f;
+    float *wave = aria ? &animation->aria_wave_age :
+                         &animation->metroid_wave_age;
+    unsigned *pending = aria ? &animation->aria_wave_pending :
+                              &animation->metroid_wave_pending;
+    if (*wave < 0.0f) *wave = 0.0f;
+    else if (*pending < 8u) ++*pending;
     proto_pulse_audio_emit(sound, aria);
 }
 
@@ -83,22 +89,29 @@ static void proto_hold_tick(ProtoHeldButton *button, float dt,
     }
 }
 
-static void proto_pulse_age_tick(ProtoAnimation *animation, float dt) {
-    float *current[] = { &animation->aria_pulse_age, &animation->metroid_pulse_age };
-    for (int j = 0; j < 2; ++j) {
-        if (*current[j] >= 0.0f) {
-            *current[j] += dt;
-            if (*current[j] >= 1.95f) *current[j] = -1.0f;
+static void proto_pulse_age_tick(ProtoAnimation *animation,float dt) {
+    /* Legacy transient ages remain available to the older formula modes. */
+    float *current[]={&animation->aria_pulse_age,&animation->metroid_pulse_age};
+    for(int i=0;i<2;++i) if(*current[i]>=0.0f) {
+        *current[i]+=dt;
+        if(*current[i]>=1.95f) *current[i]=-1.0f;
+    }
+    for(int j=0;j<7;++j) {
+        float *hist[]={&animation->aria_pulse_history[j],
+                       &animation->metroid_pulse_history[j]};
+        for(int i=0;i<2;++i) if(*hist[i]>=0.0f) {
+            *hist[i]+=dt;
+            if(*hist[i]>=1.95f) *hist[i]=-1.0f;
         }
     }
-    for (int j = 0; j < 7; ++j) {
-        float *history[] = { &animation->aria_pulse_history[j],
-                             &animation->metroid_pulse_history[j] };
-        for (int k = 0; k < 2; ++k) {
-            if (*history[k] >= 0.0f) {
-                *history[k] += dt;
-                if (*history[k] >= 1.95f) *history[k] = -1.0f;
-            }
+    float *wave[]={&animation->aria_wave_age,&animation->metroid_wave_age};
+    unsigned *waiting[]={&animation->aria_wave_pending,
+                         &animation->metroid_wave_pending};
+    for(int i=0;i<2;++i) if(*wave[i]>=0.0f) {
+        *wave[i]+=dt;
+        if(*wave[i]>=1.95f-0.000001f) {
+            if(*waiting[i]) { --*waiting[i]; *wave[i]=0.0f; }
+            else *wave[i]=-1.0f;
         }
     }
 }

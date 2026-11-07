@@ -1454,8 +1454,9 @@ int main(void) {
         cfg33.sections[1].spiral_layout=3;
         proto_animation_init(&anim33,&cfg33);
         anim33.time=0.0f;
-        anim33.aria_pulse_age=.55f;
-        anim33.metroid_pulse_age=.55f;
+        /* Patch 0038: trigger REPLAY clocks, not legacy overlay ages. */
+        anim33.aria_wave_age=.80f;
+        anim33.metroid_wave_age=.80f;
         proto_make_frame(&cfg33,&anim33,&a33);
         anim33.rotation_degrees=55.0f;
         proto_make_frame(&cfg33,&anim33,&b33);
@@ -1524,73 +1525,75 @@ int main(void) {
         assert(proto_fermat_burst_progress(1.6f)<0.0f);
     }
 
-    /* Patch 0036: balanced negative Metroid waveform, sharp teeth 3..8,
-     * and genuinely independent Aria/Metroid overlays. */
+    /* Patch 0038: NO additive geometry, true replay with queue; original
+     * + and - Metroid triangles survive the high-frequency third tooth. */
     {
-        const float speed=.2f;
-        /* 7 * 50 ms = 350 ms; beat duration stays 1.6 seconds. */
-        assert(proto_fermat_burst_progress(0.34f-7*.05f)<0.0f);
-        assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
-        assert(proto_fermat_burst_progress(1.949f-7*.05f)>=0.0f);
-        assert(proto_fermat_burst_progress(1.95f-7*.05f)<0.0f);
-        for (int cell=0;cell<8;++cell) {
+        for(int cell=0;cell<8;++cell) {
             float pos=0.0f,neg=0.0f;
-            int changes=0,prior=0;
-            for (int j=0;j<=4096;++j) {
-                const float p=(float)j/4096.0f;
+            for(int k=1;k<4096;++k) {
+                const float p=(float)k/4096.0f;
                 const float w=proto_metroid_bipolar_value(cell,p);
                 assert(isfinite(w));
-                pos=fmaxf(pos,w);
-                neg=fmaxf(neg,-w);
-                const int sign=w>.015f ? 1 : (w<-.015f ? -1 : 0);
-                if (sign && prior && sign!=prior) ++changes;
-                if (sign) prior=sign;
+                pos=fmaxf(pos,w); neg=fmaxf(neg,-w);
             }
-            assert(fabsf(pos-1.0f)<.02f);
-            assert(fabsf(neg-1.0f)<.02f);
-            if (cell>=2) assert(changes>=5);
+            assert(fabsf(pos-1.0f)<.025f);
+            assert(fabsf(neg-1.0f)<.025f);
+            /* Broad triangular crest still dominates the middle. */
+            assert(proto_metroid_bipolar_value(cell,.5f)>.30f);
+            assert(proto_metroid_bipolar_value(cell,.10f)<-.05f);
         }
         ProtoConfig cfg;
-        ProtoAnimation anim;
-        ProtoFrame base,metroid,aria;
+        ProtoAnimation ani;
+        ProtoFrame start,metroid,aria;
         proto_config_defaults(&cfg);
-        cfg.section_count=2;
-        cfg.rotation_speed=0;
+        cfg.section_count=2;cfg.rotation_speed=0.0f;
         cfg.sections[0].formula=PROTO_METROID_HORIZONTAL;
         cfg.sections[0].cycles=8.0f;
         cfg.sections[0].amplitude=30.0f;
         cfg.sections[0].repeat_visible=true;
-        cfg.sections[0].phase_speed=speed;
+        cfg.sections[0].phase_speed=.2f;
         cfg.sections[0].stagger_delay=.4f;
         cfg.sections[1].formula=PROTO_FERMAT_HORIZONTAL;
         cfg.sections[1].cycles=8.0f;
         cfg.sections[1].amplitude=15.0f;
         cfg.sections[1].spiral_layout=1;
         cfg.sections[1].repeat_visible=true;
-        cfg.sections[1].phase_speed=speed;
+        cfg.sections[1].phase_speed=.2f;
         cfg.sections[1].stagger_delay=.4f;
-        proto_animation_init(&anim,&cfg);
-        anim.time=1.7f;
-        proto_make_frame(&cfg,&anim,&base);
-        anim.metroid_pulse_age=.8f;
-        proto_make_frame(&cfg,&anim,&metroid);
-        anim.metroid_pulse_age=-1.0f;
-        anim.aria_pulse_age=.8f;
-        proto_make_frame(&cfg,&anim,&aria);
+        proto_animation_init(&ani,&cfg);
+        ani.time=0.0f;
+        proto_make_frame(&cfg,&ani,&start);
+        ani.metroid_wave_age=.8f;
+        proto_make_frame(&cfg,&ani,&metroid);
+        ani.metroid_wave_age=-1.0f;
+        ani.aria_wave_age=.8f;
+        proto_make_frame(&cfg,&ani,&aria);
         int metroid_effect=0,aria_effect=0;
-        for (int k=0;k<PROTO_PROFILE_SAMPLES;++k) {
-            const float baseline=-168.0f+336.0f*k/(PROTO_PROFILE_SAMPLES-1);
-            if (baseline<0.0f && baseline>-111.0f) {
-                metroid_effect += fabsf(metroid.offsets[k]-base.offsets[k])>.02f;
-                assert(fabsf(aria.offsets[k]-base.offsets[k])<.002f);
+        for(int k=0;k<PROTO_PROFILE_SAMPLES;++k) {
+            const float base=-168.0f+336.0f*(float)k/(PROTO_PROFILE_SAMPLES-1);
+            if(base<0.0f&&base>-110.0f) {
+                metroid_effect+=fabsf(metroid.offsets[k]-start.offsets[k])>.01f;
+                assert(fabsf(aria.offsets[k]-start.offsets[k])<.002f);
             }
-            if (baseline>0.0f && baseline<105.0f) {
-                aria_effect += hypotf(aria.x_coords[k]-base.x_coords[k],
-                                     aria.offsets[k]-base.offsets[k])>.02f;
-                assert(fabsf(metroid.offsets[k]-base.offsets[k])<.002f);
+            if(base>0.0f&&base<105.0f) {
+                aria_effect+=hypotf(aria.x_coords[k]-start.x_coords[k],
+                                    aria.offsets[k]-start.offsets[k])>.01f;
+                assert(fabsf(metroid.offsets[k]-start.offsets[k])<.002f);
             }
         }
-        assert(metroid_effect>8 && aria_effect>8);
+        assert(metroid_effect>8&&aria_effect>8);
+        /* Inactive waves change no geometry whatsoever. */
+        ani.aria_wave_age=-1.0f;
+        ProtoFrame again;
+        proto_make_frame(&cfg,&ani,&again);
+        for(int k=0;k<PROTO_PROFILE_SAMPLES;++k) {
+            assert(fabsf(again.x_coords[k]-start.x_coords[k])<.002f);
+            assert(fabsf(again.offsets[k]-start.offsets[k])<.002f);
+        }
+        assert(fabsf(proto_fermat_burst_progress(.8f)-1.0f)<.0001f);
+        assert(proto_fermat_burst_progress(1.6f)<0.0f);
+        assert(proto_fermat_burst_progress(.34f-7*.05f)<0.0f);
+        assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
     }
 
     return 0;

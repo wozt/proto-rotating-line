@@ -99,6 +99,9 @@ typedef struct {
     /* -1 = inactive; age in seconds during a 0.24s transient pulse. */
     float aria_pulse_age;
     float metroid_pulse_age;
+    /* Patch 0038: one accelerated curve at a time, with queued beats. */
+    float aria_wave_age, metroid_wave_age;
+    unsigned aria_wave_pending, metroid_wave_pending;
     float aria_pulse_history[7];
     float metroid_pulse_history[7];
     float rotation_degrees;

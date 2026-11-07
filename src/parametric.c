@@ -685,60 +685,58 @@ float proto_metroid_lightning_value(float x) {
            fmaxf(0.0f,x-6.5f)*0.2f*sinf(50.0f*x);
 }
 
-/* Patch 0036: use consecutive unit intervals of the requested Metroid
- * formula, but cancel their mostly-positive hump so peaks are symmetric.
- * Keep zero-valued endpoints; from the third tooth onward add fast bipolar
- * oscillations at two spatial frequencies. Cache fixed normalizers once. */
-static float proto_metroid_0036_raw(int tooth, float p) {
-    p = fminf(1.0f, fmaxf(0.0f, p));
-    const float left = 1.0f + (float)tooth;
-    const float y0 = proto_metroid_lightning_value(left);
-    const float y1 = proto_metroid_lightning_value(left + 1.0f);
-    const float original = proto_metroid_lightning_value(left + p);
-    const float a = fminf(1.0f, p / 0.14f);
-    const float b = fminf(1.0f, (1.0f-p) / 0.14f);
-    const float envelope = a*a*(3.0f-2.0f*a) * b*b*(3.0f-2.0f*b);
-    float result = (original - (y0 + (y1 - y0)*p)) * envelope;
-    if (tooth >= 2) {
-        const float energy = 0.27f + 0.16f * (float)(tooth - 2);
-        const float soft = sinf(PI*p);
-        result += energy * soft*soft * (
-            0.92f*sinf(2.0f*PI*(5.5f+0.20f*tooth)*p + 0.41f*tooth) +
-            0.48f*sinf(2.0f*PI*(11.0f+0.42f*tooth)*p - 0.59f*tooth));
+/* Patch 0038: preserve the original triangle's broad +/- silhouette.
+ * The source formula is a triangular wave weighted by a sigmoid and a
+ * linearly growing envelope. Subtracting the secant destroys its negative
+ * half; do NOT subtract a per-tooth mean or put radio noise in its place.
+ * From tooth 3 onward, add subdued, tapered electrical detail, then normalize
+ * positive and negative peaks independently without changing the outline. */
+static float proto_metroid_0037_raw(int tooth, float p) {
+    p=fminf(1.0f,fmaxf(0.0f,p));
+    const float x=1.0f+(float)tooth+p;
+    const float sigmoid=1.0f/(1.0f+expf(-3.0f*(x-1.0f)));
+    const float envelope=sigmoid*(0.15f*(x-3.0f)+0.5f);
+    /* The triangular part of the exact supplied expression, with the same
+     * phase as mod(x-3,1). Endpoints=-0.5, midpoint=+0.5. */
+    const float phase=x-3.0f-floorf(x-3.0f);
+    const float triangle=1.0f-2.0f*fabsf(phase-0.5f)-0.5f;
+    const float q=fminf(p,1.0f-p);
+    const float v=fminf(1.0f,q/0.08f);
+    const float root=v*v*(3.0f-2.0f*v);
+    float electric=0.0f;
+    if(tooth>=2) {
+        /* Noise stays subordinate to the broad triangle, even on tooth 8.
+         * Retain a small share of the formula's 50*x tail on last teeth. */
+        const float strength=0.11f+0.014f*(float)(tooth-2);
+        const float smooth=sinf(PI*p);
+        electric=envelope*strength*smooth*smooth*(
+            0.66f*sinf(2.0f*PI*(2.5f+0.10f*tooth)*p+0.31f*tooth)+
+            0.34f*sinf(2.0f*PI*(5.1f+0.18f*tooth)*p-0.25f*tooth));
+        electric+=0.10f*fmaxf(0.0f,x-6.5f)*0.2f*sinf(50.0f*x)*smooth*smooth;
     }
-    return result;
+    return root*(envelope*triangle+electric);
 }
 
-float proto_metroid_bipolar_value(int tooth, float p) {
-    if (tooth < 0) tooth = 0;
-    if (tooth > 7) tooth = 7;
-    p = fminf(1.0f,fmaxf(0.0f,p));
-    static float mean[8] = {0};
-    static float positive[8] = {0};
-    static float negative[8] = {0};
-    if (positive[tooth] == 0.0f) {
-        double sum = 0.0, denom = 0.0;
-        for (int k=0; k<=2048; ++k) {
-            const float q = (float)k / 2048.0f;
-            const double window = pow((double)sin(PI*q),2.0);
-            sum += proto_metroid_0036_raw(tooth,q);
-            denom += window;
+float proto_metroid_bipolar_value(int tooth,float p) {
+    if(tooth<0) tooth=0;
+    if(tooth>7) tooth=7;
+    p=fminf(1.0f,fmaxf(0.0f,p));
+    if(p<=0.0f||p>=1.0f) return 0.0f;
+    /* Cached once per tooth. No mean subtraction: that was the regression
+     * that flattened the triangles into something like radio noise. */
+    static float positive[8]={0};
+    static float negative[8]={0};
+    if(positive[tooth]==0.0f) {
+        float pos=0.0f,neg=0.0f;
+        for(int k=0;k<=4096;++k) {
+            const float val=proto_metroid_0037_raw(tooth,(float)k/4096.0f);
+            pos=fmaxf(pos,val);
+            neg=fmaxf(neg,-val);
         }
-        mean[tooth] = (float)(sum / fmax(1.0,denom));
-        float pos=0.0f, neg=0.0f;
-        for (int k=0; k<=4096; ++k) {
-            const float q=(float)k/4096.0f;
-            const float w=sinf(PI*q);
-            const float v=proto_metroid_0036_raw(tooth,q)-mean[tooth]*w*w;
-            pos=fmaxf(pos,v);
-            neg=fmaxf(neg,-v);
-        }
-        negative[tooth]=fmaxf(1.0e-6f,neg);
-        positive[tooth]=fmaxf(1.0e-6f,pos);
+        negative[tooth]=fmaxf(neg,1.0e-6f);
+        positive[tooth]=fmaxf(pos,1.0e-6f);
     }
-    if (p <= 0.0f || p >= 1.0f) return 0.0f;
-    const float w=sinf(PI*p);
-    const float v=proto_metroid_0036_raw(tooth,p)-mean[tooth]*w*w;
+    const float v=proto_metroid_0037_raw(tooth,p);
     return v>=0.0f ? v/positive[tooth] : v/negative[tooth];
 }
 
