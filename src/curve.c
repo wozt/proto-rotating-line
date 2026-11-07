@@ -401,19 +401,12 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
             (distance-inner)/outer:(distance-step*(float)cell)/step;
         const float p=fminf(1.0f,fmaxf(0.0f,local));
         const float scale=0.25f*exp2f(2.0f*(float)cell/7.0f);
-        const float delay=s->stagger_delay>0.0f ? s->stagger_delay : 0.4f;
         const float normal=proto_fermat_offset_progress(t,s->phase_speed,
-                                                         cell,delay);
+                                                         cell,s->stagger_delay);
         float mix=0.0f;
         const float beat=proto_visual_burst(pulse_animation,false,cell,&mix);
         const float growth=beat>=0.0f ? normal+(beat-normal)*mix : normal;
-        /* Patch 0048: mirror the Metroid side exactly like the Fermat side:
-         * per-cell time inversion at the 5-second loop boundary, plus odd/even alternation
-         * per cell. The triangle itself is unchanged; only its polarity flips. */
-        const float shifted=t-delay*(float)cell;
-        const float polarity=proto_fermat_twist_direction(shifted,
-            s->phase_speed)*((cell&1)?-1.0f:1.0f);
-        *y=s->amplitude*scale*growth*polarity*proto_metroid_bipolar_value(cell,p);
+        *y=s->amplitude*scale*growth*proto_metroid_bipolar_value(cell,p);
         return;
     }
     if (s->formula == PROTO_METROID_EIGHT) {

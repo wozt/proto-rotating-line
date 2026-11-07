@@ -1611,27 +1611,6 @@ int main(void) {
         assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
     }
 
-    /* Patch 0048: test inversion in shared active phases.
-     * 0047 used t=0 with negative staggered clocks, which legitimately
-     * belong to the previous direction cycle and made neighbour tests fail.
-     * Compare at t=4 and t=9, after all eight 0.4s starts have elapsed. */
-    {
-        const float speed=.2f,delay=.4f;
-        for(int cell=0;cell<8;++cell) {
-            const float parity=(cell&1)?-1.0f:1.0f;
-            /* At t=4 and t=9, all eight staggered cells are in a shared
-             * active cycle: no negative pre-start clocks or transition edges. */
-            const float early=proto_fermat_twist_direction(4.0f-delay*(float)cell,speed)*parity;
-            const float later=proto_fermat_twist_direction(9.0f-delay*(float)cell,speed)*parity;
-            assert(fabsf(later+early)<.0001f);
-            if(cell<7) {
-                const float neighbour=proto_fermat_twist_direction(4.0f-delay*(float)(cell+1),speed)*
-                                      (((cell+1)&1)?-1.0f:1.0f);
-                assert(fabsf(neighbour+early)<.0001f);
-            }
-        }
-    }
-
     /* Patch 0046: cropped, clean bipolar teeth and matched sound-clock waves.
      * Four straight segments per period, with equal +/- peaks and no extra
      * extrema. Teeth 5..8 retain their already-checked electric detail. */
