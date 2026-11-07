@@ -1040,6 +1040,20 @@ float proto_fermat_burst_progress(float age) {
 }
 
 
+/* Patch 0039: a single natural deploy/retract wave per cell, 150ms long.
+ * 8 cells staggered by 10ms => 150 + 7*10 = 220ms (same as audio).
+ * This is separate from the legacy 1.6s burst helper, which older tests
+ * and previous profiles may still reference. Inactive is represented by -1. */
+float proto_fermat_audio_progress(float age) {
+    if (!(age >= 0.0f && age < 0.15f - 0.000001f)) return -1.0f;
+    const float half = 0.075f;
+    const float u = age <= half ? age / half : (0.15f - age) / half;
+    const float t = fmaxf(0.0f, fminf(1.0f, u));
+    const float t2 = t * t;
+    const float t4 = t2 * t2;
+    return t4 * (35.0f + t * (-84.0f + t * (70.0f - 20.0f * t)));
+}
+
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
     for (int i = 0; i < PROTO_PROFILE_SAMPLES - 1; ++i) {

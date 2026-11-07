@@ -109,7 +109,8 @@ static void proto_pulse_age_tick(ProtoAnimation *animation,float dt) {
                          &animation->metroid_wave_pending};
     for(int i=0;i<2;++i) if(*wave[i]>=0.0f) {
         *wave[i]+=dt;
-        if(*wave[i]>=1.95f-0.000001f) {
+        /* 0.22s is the exact duration of the synthesized sound. */
+        if(*wave[i]>=0.22f-0.000001f) {
             if(*waiting[i]) { --*waiting[i]; *wave[i]=0.0f; }
             else *wave[i]=-1.0f;
         }

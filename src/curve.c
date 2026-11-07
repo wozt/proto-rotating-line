@@ -358,20 +358,19 @@ static void proto_fermat_impulse(float *x, float *y,
     *y = dx*sinf(angle) + dy*cosf(angle);
 }
 
-/* Patch 0038: ONE shape per element. The button only replays the
- * normal grow/retract clock faster; no additional x/y displacement.
- * At 50ms between elements, a complete wave takes 1.95s. Queued waves
- * play sequentially when the button is held, rather than stacking geometry.
- * A short blend at the boundaries prevents teleportation from normal time. */
+/* Patch 0039: one accelerated NATURAL shape per element, not an overlay.
+ * 150ms per cell + 10ms between 8 starts = 220ms per input wave, matching
+ * the audible feedback. Automatic stagger stays at 400ms per element. */
 static float proto_visual_burst(const ProtoAnimation *a,bool aria,int index,
                                 float *weight) {
     *weight=0.0f;
     if(!a) return -1.0f;
     const float age=(aria?a->aria_wave_age:a->metroid_wave_age)-
-                    0.05f*(float)index;
-    const float phase=proto_fermat_burst_progress(age);
+                    0.01f*(float)index;
+    const float phase=proto_fermat_audio_progress(age);
     if(phase<0.0f) return -1.0f;
-    *weight=smoothstep(age/0.07f)*smoothstep((1.6f-age)/0.07f);
+    /* 12ms edge blending for an otherwise unchanged Fermat/Metroid shape. */
+    *weight=smoothstep(age/0.012f)*smoothstep((0.15f-age)/0.012f);
     return phase;
 }
 

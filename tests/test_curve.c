@@ -1455,8 +1455,8 @@ int main(void) {
         proto_animation_init(&anim33,&cfg33);
         anim33.time=0.0f;
         /* Patch 0038: trigger REPLAY clocks, not legacy overlay ages. */
-        anim33.aria_wave_age=.80f;
-        anim33.metroid_wave_age=.80f;
+        anim33.aria_wave_age=.11f;
+        anim33.metroid_wave_age=.11f;
         proto_make_frame(&cfg33,&anim33,&a33);
         anim33.rotation_degrees=55.0f;
         proto_make_frame(&cfg33,&anim33,&b33);
@@ -1563,10 +1563,10 @@ int main(void) {
         proto_animation_init(&ani,&cfg);
         ani.time=0.0f;
         proto_make_frame(&cfg,&ani,&start);
-        ani.metroid_wave_age=.8f;
+        ani.metroid_wave_age=.11f;
         proto_make_frame(&cfg,&ani,&metroid);
         ani.metroid_wave_age=-1.0f;
-        ani.aria_wave_age=.8f;
+        ani.aria_wave_age=.11f;
         proto_make_frame(&cfg,&ani,&aria);
         int metroid_effect=0,aria_effect=0;
         for(int k=0;k<PROTO_PROFILE_SAMPLES;++k) {
@@ -1594,6 +1594,26 @@ int main(void) {
         assert(proto_fermat_burst_progress(1.6f)<0.0f);
         assert(proto_fermat_burst_progress(.34f-7*.05f)<0.0f);
         assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
+    }
+
+    /* Patch 0039: all eight button beats complete while the 220ms sound
+     * is audible; no extra curve is drawn and the 0.4s ambient offset stays. */
+    {
+        assert(proto_fermat_audio_progress(-.0001f)<0.0f);
+        assert(fabsf(proto_fermat_audio_progress(0.0f))<.00001f);
+        assert(fabsf(proto_fermat_audio_progress(.075f)-1.0f)<.0001f);
+        assert(proto_fermat_audio_progress(.149f)>=0.0f);
+        assert(proto_fermat_audio_progress(.15f)<0.0f);
+        assert(proto_fermat_audio_progress(.151f)<0.0f);
+        assert(proto_fermat_audio_progress(.8f)<0.0f);
+        const float last_start=7.0f*.01f;
+        assert(fabsf(last_start-.07f)<.000001f);
+        assert(proto_fermat_audio_progress(.069f-last_start)<0.0f);
+        assert(fabsf(proto_fermat_audio_progress(.145f-last_start)-1.0f)<.0001f);
+        assert(proto_fermat_audio_progress(.219f-last_start)>=0.0f);
+        assert(proto_fermat_audio_progress(.220f-last_start)<0.0f);
+        assert(proto_fermat_audio_progress(.221f-last_start)<0.0f);
+        assert(proto_fermat_offset_progress(1.0f,.2f,7,.4f)==0.0f);
     }
 
     return 0;

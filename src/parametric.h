@@ -63,6 +63,7 @@ void proto_fermat_horizontal_point(float p, float cell_start, float cell_span,
                                     int index, float amplitude, float growth,
                                     float winding, float direction, float *x, float *y);
 float proto_fermat_burst_progress(float age);
+float proto_fermat_audio_progress(float age);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif
