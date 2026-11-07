@@ -693,18 +693,18 @@ float proto_metroid_lightning_value(float x) {
  * positive and negative peaks independently without changing the outline. */
 static float proto_metroid_0037_raw(int tooth, float p) {
     p=fminf(1.0f,fmaxf(0.0f,p));
-    /* Patch 0043: clean, straight bipolar triangles on teeth 1..3.
-     * The old sigmoid envelope and smooth root collar made the negative
-     * valley asymmetric, creating a visible small kink at the joins.
-     * A strictly piecewise-linear and mirror-symmetric profile has no
-     * sinusoidal harmonics, no rounded shoulder, exact +/-1 peaks and
-     * zero at the cell joins (even when adjacent cells animate separately).
-     * Leave teeth 4..8 and their controlled electric detail untouched. */
-    if (tooth < 3) {
-        const float v=fminf(p,1.0f-p);
-        const float valley=0.125f;
-        if (v <= valley) return -v/valley;
-        return -1.0f+2.0f*(v-valley)/(0.5f-valley);
+    /* Patch 0045: crop teeth 1..4 to a clean positive spike.
+     * The user still saw a small unwanted feature in the valleys. For the
+     * first four teeth, discard the root/valley part entirely and only keep
+     * the rising and falling fronts: a cropped triangle with a flat zero
+     * baseline at both sides. This keeps the first teeth very readable while
+     * the later ones stay electrical. */
+    if (tooth < 4) {
+        const float left=0.18f;
+        const float right=0.82f;
+        if (p <= left || p >= right) return 0.0f;
+        const float q=(p-left)/(right-left);
+        return q <= 0.5f ? (2.0f*q) : (2.0f*(1.0f-q));
     }
     const float x=1.0f+(float)tooth+p;
     const float sigmoid=1.0f/(1.0f+expf(-3.0f*(x-1.0f)));

@@ -1542,10 +1542,16 @@ int main(void) {
                 pos=fmaxf(pos,w); neg=fmaxf(neg,-w);
             }
             assert(fabsf(pos-1.0f)<.025f);
-            assert(fabsf(neg-1.0f)<.025f);
-            /* Broad triangular crest still dominates the middle. */
+            /* Patch 0045: the four cropped triangles have no negative valley.
+             * The electric triangles (5..8) retain balanced +/-1 peaks. */
+            if (cell < 4) {
+                assert(neg < .0001f);
+                assert(fabsf(proto_metroid_bipolar_value(cell,.10f))<.0001f);
+            } else {
+                assert(fabsf(neg-1.0f)<.025f);
+                assert(proto_metroid_bipolar_value(cell,.10f)<-.05f);
+            }
             assert(proto_metroid_bipolar_value(cell,.5f)>.30f);
-            assert(proto_metroid_bipolar_value(cell,.10f)<-.05f);
         }
         ProtoConfig cfg;
         ProtoAnimation ani;
@@ -1603,38 +1609,48 @@ int main(void) {
         assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
     }
 
-    /* Patch 0043: first three Metroid teeth must have perfectly clean valleys.
-     * No extra extrema or curvature in the negative trough; the two signs
-     * remain balanced. Later teeth retain their intentional electricity. */
+    /* Patch 0045: the first four Metroid teeth are cropped, clean spikes.
+     * We intentionally keep only the rising and falling fronts; outside the
+     * cropped core the signal is flat zero. Later teeth remain irregular and
+     * electrical. */
     {
-        const float p_breaks[]={0.0f,0.125f,0.5f,0.875f,1.0f};
-        const float expected[]={0.0f,-1.0f,1.0f,-1.0f,0.0f};
-        for(int tooth=0; tooth<3; ++tooth) {
+        const float p_breaks[]={0.0f,0.18f,0.5f,0.82f,1.0f};
+        const float expected[]={0.0f,0.0f,1.0f,0.0f,0.0f};
+        for(int tooth=0; tooth<4; ++tooth) {
             for(int j=0; j<5; ++j) {
                 const float got=proto_metroid_bipolar_value(tooth,p_breaks[j]);
                 assert(fabsf(got-expected[j])<.0001f);
             }
-            for(int seg=0; seg<4; ++seg) {
-                const float a=p_breaks[seg], b=p_breaks[seg+1];
-                for(int j=1;j<20;++j) {
-                    const float p=a+(b-a)*(float)j/20.0f;
-                    const float linear=expected[seg]+(expected[seg+1]-expected[seg])*
-                        ((p-a)/(b-a));
-                    const float got=proto_metroid_bipolar_value(tooth,p);
-                    assert(isfinite(got));
-                    assert(fabsf(got-linear)<.0002f);
-                    assert(fabsf(got-proto_metroid_bipolar_value(tooth,1.0f-p))<.0002f);
-                }
+            /* Flat zeros on both cropped sides. */
+            for(int j=0;j<10;++j) {
+                const float pl=0.18f*(float)j/10.0f;
+                const float pr=0.82f+0.18f*(float)j/10.0f;
+                assert(fabsf(proto_metroid_bipolar_value(tooth,pl))<.0001f);
+                assert(fabsf(proto_metroid_bipolar_value(tooth,pr))<.0001f);
+            }
+            /* Strictly linear rising edge and falling edge. */
+            for(int j=1;j<32;++j) {
+                const float p1=0.18f+(0.50f-0.18f)*(float)j/32.0f;
+                const float e1=(p1-0.18f)/(0.50f-0.18f);
+                const float g1=proto_metroid_bipolar_value(tooth,p1);
+                assert(fabsf(g1-e1)<.0002f);
+                const float p2=0.50f+(0.82f-0.50f)*(float)j/32.0f;
+                const float e2=1.0f-(p2-0.50f)/(0.82f-0.50f);
+                const float g2=proto_metroid_bipolar_value(tooth,p2);
+                assert(fabsf(g2-e2)<.0002f);
             }
         }
-        /* Tooth 4 keeps the original, slightly irregular electrical signal. */
+        /* Tooth 5 remains electrical and must differ clearly from the clean spike. */
         float max_difference=0.0f;
         for(int j=1;j<100;++j) {
             const float p=(float)j/100.0f;
-            const float v=fminf(p,1.0f-p);
-            const float simple=v<=.125f ? -v/.125f : -1.0f+2.0f*(v-.125f)/.375f;
+            float simple=0.0f;
+            if (p>0.18f && p<0.82f) {
+                const float q=(p-0.18f)/(0.82f-0.18f);
+                simple=q<=0.5f ? 2.0f*q : 2.0f*(1.0f-q);
+            }
             max_difference=fmaxf(max_difference,
-                                 fabsf(proto_metroid_bipolar_value(3,p)-simple));
+                                 fabsf(proto_metroid_bipolar_value(4,p)-simple));
         }
         assert(max_difference>.08f);
     }
