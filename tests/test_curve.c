@@ -1454,7 +1454,12 @@ int main(void) {
         cfg33.sections[1].spiral_layout=3;
         proto_animation_init(&anim33,&cfg33);
         anim33.time=0.0f;
-        /* Patch 0038: trigger REPLAY clocks, not legacy overlay ages. */
+        /* Patch 0041: a replay fixture must specify its PCM length.
+         * Without this, a zero-duration wave is intentionally inactive. */
+        anim33.aria_wave_duration=.22f;
+        anim33.metroid_wave_duration=.22f;
+        assert(proto_button_wave_cell_duration(anim33.aria_wave_duration)>.0f);
+        /* Trigger both independent natural-motion replay clocks. */
         anim33.aria_wave_age=.11f;
         anim33.metroid_wave_age=.11f;
         proto_make_frame(&cfg33,&anim33,&a33);
@@ -1562,6 +1567,8 @@ int main(void) {
         cfg.sections[1].stagger_delay=.4f;
         proto_animation_init(&ani,&cfg);
         ani.time=0.0f;
+        ani.aria_wave_duration=.22f;
+        ani.metroid_wave_duration=.22f;
         proto_make_frame(&cfg,&ani,&start);
         ani.metroid_wave_age=.11f;
         proto_make_frame(&cfg,&ani,&metroid);
@@ -1596,23 +1603,29 @@ int main(void) {
         assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
     }
 
-    /* Patch 0039: all eight button beats complete while the 220ms sound
-     * is audible; no extra curve is drawn and the 0.4s ambient offset stays. */
+    /* Patch 0041: button-wave timing derives only from audio length. */
     {
-        assert(proto_fermat_audio_progress(-.0001f)<0.0f);
-        assert(fabsf(proto_fermat_audio_progress(0.0f))<.00001f);
-        assert(fabsf(proto_fermat_audio_progress(.075f)-1.0f)<.0001f);
-        assert(proto_fermat_audio_progress(.149f)>=0.0f);
-        assert(proto_fermat_audio_progress(.15f)<0.0f);
-        assert(proto_fermat_audio_progress(.151f)<0.0f);
-        assert(proto_fermat_audio_progress(.8f)<0.0f);
-        const float last_start=7.0f*.01f;
-        assert(fabsf(last_start-.07f)<.000001f);
-        assert(proto_fermat_audio_progress(.069f-last_start)<0.0f);
-        assert(fabsf(proto_fermat_audio_progress(.145f-last_start)-1.0f)<.0001f);
-        assert(proto_fermat_audio_progress(.219f-last_start)>=0.0f);
-        assert(proto_fermat_audio_progress(.220f-last_start)<0.0f);
-        assert(proto_fermat_audio_progress(.221f-last_start)<0.0f);
+        const float lengths[] = { .22f, .11f, .44f, .67f };
+        assert(proto_fermat_audio_progress(0.0f, 0.0f) < 0.0f);
+        assert(proto_fermat_audio_progress(0.0f, -1.0f) < 0.0f);
+        for(int z=0;z<4;++z) {
+            const float length=lengths[z];
+            const float delay=proto_button_wave_delay(length);
+            const float cell=proto_button_wave_cell_duration(length);
+            assert(fabsf(cell+7.0f*delay-length)<0.000002f);
+            assert(proto_fermat_audio_progress(-0.001f,length)<0.0f);
+            assert(fabsf(proto_fermat_audio_progress(0.0f,length))<.00001f);
+            assert(fabsf(proto_fermat_audio_progress(cell*0.5f,length)-1.0f)<.0001f);
+            assert(proto_fermat_audio_progress(cell*.98f,length)>=0.0f);
+            assert(proto_fermat_audio_progress(cell,length)<0.0f);
+            assert(proto_fermat_audio_progress(cell+.001f,length)<0.0f);
+            for(int i=0;i<8;++i) {
+                const float start=i*delay;
+                assert(start>=0.0f);
+                assert(fabsf((start+cell)-(length-(7-i)*delay))<.000002f);
+                assert(fabsf(proto_fermat_audio_progress(.5f*cell,length)-1.0f)<.0001f);
+            }
+        }
         assert(proto_fermat_offset_progress(1.0f,.2f,7,.4f)==0.0f);
     }
 

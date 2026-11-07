@@ -101,7 +101,11 @@ typedef struct {
     float metroid_pulse_age;
     /* Patch 0038: one accelerated curve at a time, with queued beats. */
     float aria_wave_age, metroid_wave_age;
+    /* The actual length of the PCM event currently being replayed. */
+    float aria_wave_duration, metroid_wave_duration;
     unsigned aria_wave_pending, metroid_wave_pending;
+    /* Preserve each queued sound duration for X and Y independently. */
+    float aria_wave_queue_durations[8], metroid_wave_queue_durations[8];
     float aria_pulse_history[7];
     float metroid_pulse_history[7];
     float rotation_degrees;

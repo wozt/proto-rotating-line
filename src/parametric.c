@@ -1040,18 +1040,30 @@ float proto_fermat_burst_progress(float age) {
 }
 
 
-/* Patch 0039: a single natural deploy/retract wave per cell, 150ms long.
- * 8 cells staggered by 10ms => 150 + 7*10 = 220ms (same as audio).
- * This is separate from the legacy 1.6s burst helper, which older tests
- * and previous profiles may still reference. Inactive is represented by -1. */
-float proto_fermat_audio_progress(float age) {
-    if (!(age >= 0.0f && age < 0.15f - 0.000001f)) return -1.0f;
-    const float half = 0.075f;
-    const float u = age <= half ? age / half : (0.15f - age) / half;
+/* Patch 0041: exactly one timing source, the length of emitted audio PCM.
+ * Fractions reproduce the former 10ms stagger + 150ms cell for T=220ms.
+ * The last cell ends exactly when the corresponding audio clip ends. */
+float proto_button_wave_delay(float clip_duration) {
+    if (!isfinite(clip_duration) || clip_duration <= 0.0f) return 0.0f;
+    return clip_duration / 22.0f;
+}
+
+float proto_button_wave_cell_duration(float clip_duration) {
+    if (!isfinite(clip_duration) || clip_duration <= 0.0f) return 0.0f;
+    return clip_duration - 7.0f*proto_button_wave_delay(clip_duration);
+}
+
+float proto_fermat_audio_progress(float age, float clip_duration) {
+    const float cell = proto_button_wave_cell_duration(clip_duration);
+    if (!(cell > 0.0f) || !isfinite(age)) return -1.0f;
+    const float eps = fmaxf(0.00000001f, cell*0.00001f);
+    if (!(age >= 0.0f && age < cell-eps)) return -1.0f;
+    const float half = 0.5f*cell;
+    const float u = age <= half ? age/half : (cell-age)/half;
     const float t = fmaxf(0.0f, fminf(1.0f, u));
-    const float t2 = t * t;
-    const float t4 = t2 * t2;
-    return t4 * (35.0f + t * (-84.0f + t * (70.0f - 20.0f * t)));
+    const float t2 = t*t;
+    const float t4 = t2*t2;
+    return t4*(35.0f+t*(-84.0f+t*(70.0f-20.0f*t)));
 }
 
 void proto_parametric_prepare(ProtoFrame *frame) {

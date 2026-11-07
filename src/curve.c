@@ -358,19 +358,21 @@ static void proto_fermat_impulse(float *x, float *y,
     *y = dx*sinf(angle) + dy*cosf(angle);
 }
 
-/* Patch 0039: one accelerated NATURAL shape per element, not an overlay.
- * 150ms per cell + 10ms between 8 starts = 220ms per input wave, matching
- * the audible feedback. Automatic stagger stays at 400ms per element. */
+/* Patch 0041: button waves follow each emitted PCM clip length.
+ * One natural curve per cell, no second geometry layer. */
 static float proto_visual_burst(const ProtoAnimation *a,bool aria,int index,
                                 float *weight) {
     *weight=0.0f;
     if(!a) return -1.0f;
+    const float duration=aria?a->aria_wave_duration:a->metroid_wave_duration;
+    const float cell=proto_button_wave_cell_duration(duration);
     const float age=(aria?a->aria_wave_age:a->metroid_wave_age)-
-                    0.01f*(float)index;
-    const float phase=proto_fermat_audio_progress(age);
+                    proto_button_wave_delay(duration)*(float)index;
+    const float phase=proto_fermat_audio_progress(age,duration);
     if(phase<0.0f) return -1.0f;
-    /* 12ms edge blending for an otherwise unchanged Fermat/Metroid shape. */
-    *weight=smoothstep(age/0.012f)*smoothstep((0.15f-age)/0.012f);
+    /* Also scale the edge blend: no fixed 12ms when sound length changes. */
+    const float edge=cell*0.08f;
+    *weight=smoothstep(age/edge)*smoothstep((cell-age)/edge);
     return phase;
 }
 

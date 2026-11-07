@@ -52,9 +52,18 @@ static void proto_trigger_pulse(ProtoAnimation *animation, SDL_AudioStream *soun
                          &animation->metroid_wave_age;
     unsigned *pending = aria ? &animation->aria_wave_pending :
                               &animation->metroid_wave_pending;
-    if (*wave < 0.0f) *wave = 0.0f;
-    else if (*pending < 8u) ++*pending;
-    proto_pulse_audio_emit(sound, aria);
+    /* Length is derived from the exact PCM frame count emitted. */
+    const float duration = proto_pulse_audio_emit(sound, aria);
+    float *playing_duration = aria ? &animation->aria_wave_duration :
+                                      &animation->metroid_wave_duration;
+    float *queued_durations = aria ? animation->aria_wave_queue_durations :
+                                    animation->metroid_wave_queue_durations;
+    if (*wave < 0.0f) {
+        *playing_duration = duration;
+        *wave = 0.0f;
+    } else if (*pending < 8u) {
+        queued_durations[(*pending)++] = duration;
+    }
 }
 
 static void proto_press(ProtoHeldButton *button, ProtoAnimation *animation,
@@ -107,12 +116,21 @@ static void proto_pulse_age_tick(ProtoAnimation *animation,float dt) {
     float *wave[]={&animation->aria_wave_age,&animation->metroid_wave_age};
     unsigned *waiting[]={&animation->aria_wave_pending,
                          &animation->metroid_wave_pending};
+    float *durations[]={&animation->aria_wave_duration,
+                        &animation->metroid_wave_duration};
+    float *queues[]={animation->aria_wave_queue_durations,
+                     animation->metroid_wave_queue_durations};
     for(int i=0;i<2;++i) if(*wave[i]>=0.0f) {
         *wave[i]+=dt;
-        /* 0.22s is the exact duration of the synthesized sound. */
-        if(*wave[i]>=0.22f-0.000001f) {
-            if(*waiting[i]) { --*waiting[i]; *wave[i]=0.0f; }
-            else *wave[i]=-1.0f;
+        const float length=*durations[i];
+        if(length>0.0f && *wave[i]>=length-fmaxf(0.000001f,length*0.00001f)) {
+            if(*waiting[i]) {
+                /* Corresponding next PCM buffer is queued by SDL too. */
+                *durations[i]=queues[i][0];
+                for(unsigned q=1;q<*waiting[i];++q) queues[i][q-1]=queues[i][q];
+                --*waiting[i];
+                *wave[i]=0.0f;
+            } else *wave[i]=-1.0f;
         }
     }
 }

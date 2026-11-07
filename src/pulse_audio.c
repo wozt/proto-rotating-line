@@ -19,16 +19,18 @@ SDL_AudioStream *proto_pulse_audio_open(void) {
     return stream;
 }
 
-void proto_pulse_audio_emit(SDL_AudioStream *audio, bool aria) {
-    if (!audio) return;
+float proto_pulse_audio_emit(SDL_AudioStream *audio, bool aria) {
     const int count = (int)(PULSE_DURATION * PULSE_AUDIO_HZ);
+    const float duration = (float)count / (float)PULSE_AUDIO_HZ;
+    /* The length of the actual generated PCM, not a visual constant. */
+    if (!audio) return duration;
     float samples[(int)(PULSE_DURATION * PULSE_AUDIO_HZ)];
     uint32_t seed = 0x0b19c001u;
     float last_noise = 0.0f;
     for (int i = 0; i < count; ++i) {
         const float t = (float)i / PULSE_AUDIO_HZ;
         const float attack = fminf(1.0f, t / 0.006f);
-        const float tail = fminf(1.0f, (PULSE_DURATION-t) / 0.014f);
+        const float tail = fminf(1.0f, (duration-t) / 0.014f);
         float sample;
         if (aria) {
             const float beat1 = expf(-34.0f*t)*sinf(2.0f*PULSE_PI*(65.0f*t-14.0f*t*t));
@@ -49,6 +51,6 @@ void proto_pulse_audio_emit(SDL_AudioStream *audio, bool aria) {
         }
         samples[i] = fmaxf(-0.8f, fminf(0.8f, sample*attack*tail));
     }
-    /* At 0.5s between pulses, the old 0.22s sound has finished naturally. */
     (void)SDL_PutAudioStreamData(audio, samples, count*(int)sizeof(float));
+    return duration;
 }
