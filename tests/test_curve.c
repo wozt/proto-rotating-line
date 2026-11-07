@@ -1542,16 +1542,18 @@ int main(void) {
                 pos=fmaxf(pos,w); neg=fmaxf(neg,-w);
             }
             assert(fabsf(pos-1.0f)<.025f);
-            /* Patch 0045: the four cropped triangles have no negative valley.
-             * The electric triangles (5..8) retain balanced +/-1 peaks. */
+            assert(fabsf(neg-1.0f)<.025f);
+            /* 1..4: clean +/- fronts. 5..8: electric, still bipolar. */
             if (cell < 4) {
-                assert(neg < .0001f);
-                assert(fabsf(proto_metroid_bipolar_value(cell,.10f))<.0001f);
+                assert(fabsf(proto_metroid_bipolar_value(cell,.10f)-.4f)<.0002f);
+                assert(fabsf(proto_metroid_bipolar_value(cell,.25f)-1.0f)<.0002f);
+                assert(fabsf(proto_metroid_bipolar_value(cell,.50f))<.0002f);
+                assert(fabsf(proto_metroid_bipolar_value(cell,.75f)+1.0f)<.0002f);
+                assert(fabsf(proto_metroid_bipolar_value(cell,.90f)+.4f)<.0002f);
             } else {
-                assert(fabsf(neg-1.0f)<.025f);
+                assert(proto_metroid_bipolar_value(cell,.5f)>.30f);
                 assert(proto_metroid_bipolar_value(cell,.10f)<-.05f);
             }
-            assert(proto_metroid_bipolar_value(cell,.5f)>.30f);
         }
         ProtoConfig cfg;
         ProtoAnimation ani;
@@ -1609,50 +1611,78 @@ int main(void) {
         assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
     }
 
-    /* Patch 0045: the first four Metroid teeth are cropped, clean spikes.
-     * We intentionally keep only the rising and falling fronts; outside the
-     * cropped core the signal is flat zero. Later teeth remain irregular and
-     * electrical. */
+    /* Patch 0048: test inversion in shared active phases.
+     * 0047 used t=0 with negative staggered clocks, which legitimately
+     * belong to the previous direction cycle and made neighbour tests fail.
+     * Compare at t=4 and t=9, after all eight 0.4s starts have elapsed. */
     {
-        const float p_breaks[]={0.0f,0.18f,0.5f,0.82f,1.0f};
-        const float expected[]={0.0f,0.0f,1.0f,0.0f,0.0f};
+        const float speed=.2f,delay=.4f;
+        for(int cell=0;cell<8;++cell) {
+            const float parity=(cell&1)?-1.0f:1.0f;
+            /* At t=4 and t=9, all eight staggered cells are in a shared
+             * active cycle: no negative pre-start clocks or transition edges. */
+            const float early=proto_fermat_twist_direction(4.0f-delay*(float)cell,speed)*parity;
+            const float later=proto_fermat_twist_direction(9.0f-delay*(float)cell,speed)*parity;
+            assert(fabsf(later+early)<.0001f);
+            if(cell<7) {
+                const float neighbour=proto_fermat_twist_direction(4.0f-delay*(float)(cell+1),speed)*
+                                      (((cell+1)&1)?-1.0f:1.0f);
+                assert(fabsf(neighbour+early)<.0001f);
+            }
+        }
+    }
+
+    /* Patch 0046: cropped, clean bipolar teeth and matched sound-clock waves.
+     * Four straight segments per period, with equal +/- peaks and no extra
+     * extrema. Teeth 5..8 retain their already-checked electric detail. */
+    {
+        const float points[]={0.0f,0.25f,0.50f,0.75f,1.0f};
+        const float expected[]={0.0f,1.0f,0.0f,-1.0f,0.0f};
         for(int tooth=0; tooth<4; ++tooth) {
-            for(int j=0; j<5; ++j) {
-                const float got=proto_metroid_bipolar_value(tooth,p_breaks[j]);
-                assert(fabsf(got-expected[j])<.0001f);
+            for(int j=0;j<5;++j)
+                assert(fabsf(proto_metroid_bipolar_value(tooth,points[j])-
+                             expected[j])<.0002f);
+            for(int seg=0;seg<4;++seg) {
+                const float a=points[seg],b=points[seg+1];
+                for(int k=1;k<32;++k) {
+                    const float u=(float)k/32.0f;
+                    const float p=a+(b-a)*u;
+                    const float expected_y=expected[seg]+u*(expected[seg+1]-expected[seg]);
+                    assert(fabsf(proto_metroid_bipolar_value(tooth,p)-expected_y)<.0002f);
+                }
             }
-            /* Flat zeros on both cropped sides. */
-            for(int j=0;j<10;++j) {
-                const float pl=0.18f*(float)j/10.0f;
-                const float pr=0.82f+0.18f*(float)j/10.0f;
-                assert(fabsf(proto_metroid_bipolar_value(tooth,pl))<.0001f);
-                assert(fabsf(proto_metroid_bipolar_value(tooth,pr))<.0001f);
-            }
-            /* Strictly linear rising edge and falling edge. */
-            for(int j=1;j<32;++j) {
-                const float p1=0.18f+(0.50f-0.18f)*(float)j/32.0f;
-                const float e1=(p1-0.18f)/(0.50f-0.18f);
-                const float g1=proto_metroid_bipolar_value(tooth,p1);
-                assert(fabsf(g1-e1)<.0002f);
-                const float p2=0.50f+(0.82f-0.50f)*(float)j/32.0f;
-                const float e2=1.0f-(p2-0.50f)/(0.82f-0.50f);
-                const float g2=proto_metroid_bipolar_value(tooth,p2);
-                assert(fabsf(g2-e2)<.0002f);
+            for(int k=1;k<100;++k) {
+                const float p=(float)k/100.0f;
+                assert(fabsf(proto_metroid_bipolar_value(tooth,p)+
+                             proto_metroid_bipolar_value(tooth,1.0f-p))<.0002f);
             }
         }
-        /* Tooth 5 remains electrical and must differ clearly from the clean spike. */
-        float max_difference=0.0f;
-        for(int j=1;j<100;++j) {
-            const float p=(float)j/100.0f;
-            float simple=0.0f;
-            if (p>0.18f && p<0.82f) {
-                const float q=(p-0.18f)/(0.82f-0.18f);
-                simple=q<=0.5f ? 2.0f*q : 2.0f*(1.0f-q);
+        /* Both X and Y use the SAME PCM duration, 8-cell delay and envelope;
+         * the Fermat winding correction removes its old 1.18 exponent lag.
+         * Ambient timing (0.4s) is checked by existing tests and unchanged. */
+        const float durations[]={.11f,.22f,.44f,.67f};
+        for(int n=0;n<4;++n) {
+            const float duration=durations[n];
+            const float stagger=proto_button_wave_delay(duration);
+            const float cell=proto_button_wave_cell_duration(duration);
+            for(int i=0;i<8;++i) {
+                const float start=stagger*(float)i;
+                assert(fabsf(start+cell-(duration-(7-i)*stagger))<.000002f);
+                /* Same event time, same delayed clock, same geometric peak. */
+                const float beat=proto_fermat_audio_progress(start+.5f*cell-start,
+                                                               duration);
+                assert(fabsf(beat-1.0f)<.0002f);
+                const float adjusted=proto_fermat_visual_sync_progress(beat);
+                assert(fabsf(powf(adjusted,1.18f)-beat)<.0002f);
             }
-            max_difference=fmaxf(max_difference,
-                                 fabsf(proto_metroid_bipolar_value(4,p)-simple));
+            for(int k=0;k<=100;++k) {
+                const float target=(float)k/100.0f;
+                const float adjusted=proto_fermat_visual_sync_progress(target);
+                assert(isfinite(adjusted));
+                assert(adjusted>=target-.0001f && adjusted<=1.0001f);
+                assert(fabsf(powf(adjusted,1.18f)-target)<.0002f);
+            }
         }
-        assert(max_difference>.08f);
     }
 
     /* Patch 0041: button-wave timing derives only from audio length. */

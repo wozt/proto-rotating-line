@@ -401,12 +401,19 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
             (distance-inner)/outer:(distance-step*(float)cell)/step;
         const float p=fminf(1.0f,fmaxf(0.0f,local));
         const float scale=0.25f*exp2f(2.0f*(float)cell/7.0f);
+        const float delay=s->stagger_delay>0.0f ? s->stagger_delay : 0.4f;
         const float normal=proto_fermat_offset_progress(t,s->phase_speed,
-                                                         cell,s->stagger_delay);
+                                                         cell,delay);
         float mix=0.0f;
         const float beat=proto_visual_burst(pulse_animation,false,cell,&mix);
         const float growth=beat>=0.0f ? normal+(beat-normal)*mix : normal;
-        *y=s->amplitude*scale*growth*proto_metroid_bipolar_value(cell,p);
+        /* Patch 0048: mirror the Metroid side exactly like the Fermat side:
+         * per-cell time inversion at the 5-second loop boundary, plus odd/even alternation
+         * per cell. The triangle itself is unchanged; only its polarity flips. */
+        const float shifted=t-delay*(float)cell;
+        const float polarity=proto_fermat_twist_direction(shifted,
+            s->phase_speed)*((cell&1)?-1.0f:1.0f);
+        *y=s->amplitude*scale*growth*polarity*proto_metroid_bipolar_value(cell,p);
         return;
     }
     if (s->formula == PROTO_METROID_EIGHT) {
@@ -457,12 +464,18 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
             float mix=0.0f;
             const float beat=proto_visual_burst(pulse_animation,true,i,&mix);
             const float growth=beat>=0.0f ? normal+(beat-normal)*mix : normal;
+            /* Patch 0046: the SAME wave clock as the Metroid side; correct
+             * the Fermat winding-angle exponent only while X/Y is active.
+             * No extra spiral is drawn; ambient movement is unchanged. */
+            const float visual_growth=beat>=0.0f ?
+                growth+mix*(proto_fermat_visual_sync_progress(growth)-growth) :
+                growth;
             const float shifted=t-delay*(float)i;
             const float direction=proto_fermat_twist_direction(shifted,
                 s->phase_speed)*((i&1)?-1.0f:1.0f);
             const float winding=0.25f+0.75f*(float)i/7.0f;
             proto_fermat_horizontal_point(p,begin,length,i,s->amplitude,
-                                          growth,winding,direction,x,y);
+                                          visual_growth,winding,direction,x,y);
             return;
         }
         return;
