@@ -382,6 +382,24 @@ int main(void) {
         }
     }
 #endif
+#ifdef PROTO_HORIZONTAL_A_CFG
+    {
+        ProtoConfig a34, roundtrip34;
+        proto_config_defaults(&a34);
+        assert(proto_config_load(PROTO_HORIZONTAL_A_CFG,&a34,error,sizeof error));
+        assert(a34.section_count==2);
+        assert(a34.sections[0].formula==PROTO_METROID_HORIZONTAL);
+        assert(a34.sections[1].formula==PROTO_FERMAT_HORIZONTAL);
+        assert(a34.sections[1].spiral_layout==1);
+        assert(fabsf(a34.sections[0].stagger_delay-.4f)<.0001f);
+        assert(fabsf(a34.sections[1].stagger_delay-.4f)<.0001f);
+        assert(proto_config_save(path,&a34,error,sizeof error));
+        proto_config_defaults(&roundtrip34);
+        assert(proto_config_load(path,&roundtrip34,error,sizeof error));
+        assert(roundtrip34.sections[1].spiral_layout==1);
+        remove(path);
+    }
+#endif
     puts("config_roundtrip: ok");
     return 0;
 }

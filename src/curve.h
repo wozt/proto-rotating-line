@@ -39,6 +39,8 @@ typedef enum {
     PROTO_METROID_EIGHT,
     PROTO_FERMAT_ROUND,
     PROTO_FERMAT_DIAGONAL,
+    PROTO_FERMAT_HORIZONTAL,
+    PROTO_METROID_HORIZONTAL,
     PROTO_CUSTOM,
     PROTO_FORMULA_COUNT
 } ProtoFormula;
@@ -97,6 +99,8 @@ typedef struct {
     /* -1 = inactive; age in seconds during a 0.24s transient pulse. */
     float aria_pulse_age;
     float metroid_pulse_age;
+    float aria_pulse_history[7];
+    float metroid_pulse_history[7];
     float rotation_degrees;
     bool paused;
     float accumulator;  /* Delta time accumulator for fixed timestep */

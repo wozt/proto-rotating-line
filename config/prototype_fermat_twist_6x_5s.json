@@ -10,25 +10,22 @@
   },
   "sections": [
     {
-      "formula": "metroid_horizontal",
-      "amplitude": 30.0,
-      "cycles": 8,
+      "formula": "spatial_lightning",
+      "amplitude": 8.2,
+      "cycles": 4,
       "phase_speed": 0.2,
-      "stagger_delay": 0.4,
       "repeat_visible": true,
-      "gap_pixels": 0.0,
+      "gap_pixels": 0.25,
       "animated": false,
       "loop": true
     },
     {
-      "formula": "fermat_horizontal",
+      "formula": "fermat_twist",
       "amplitude": 15.0,
-      "cycles": 8,
+      "cycles": 6,
       "phase_speed": 0.2,
-      "stagger_delay": 0.4,
-      "spiral_layout": 4,
       "repeat_visible": true,
-      "gap_pixels": 0.0,
+      "gap_pixels": 0.25,
       "animated": false,
       "loop": true
     }
