@@ -36,7 +36,7 @@ bool proto_valid_section_count(int count) {
 
 const char *proto_formula_name(ProtoFormula formula) {
     static const char *names[] = {"straight", "sine", "lightning", "fractal", "fourier",
-                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "fermat_tall", "metroid_eight", "fermat_round", "fermat_diagonal", "custom"};
+                                   "chirp", "trochoid", "harmonic_fractal", "spiral", "triangle", "spatial_wave", "spatial_lightning", "wolfram_halfturn", "wolfram_tentacle", "wolfram_ribbon", "wolfram_double_ribbon", "pinched_rope", "fermat_spiral", "fermat_twist", "metroid_lightning", "fermat_tall", "metroid_eight", "fermat_round", "fermat_diagonal", "fermat_horizontal", "metroid_horizontal", "custom"};
     return formula >= 0 && formula < PROTO_FORMULA_COUNT ? names[formula] : "unknown";
 }
 
@@ -77,6 +77,10 @@ void proto_animation_init(ProtoAnimation *animation, const ProtoConfig *config) 
     memset(animation, 0, sizeof *animation);
     animation->aria_pulse_age = -1.0f;
     animation->metroid_pulse_age = -1.0f;
+    for (int j = 0; j < 7; ++j) {
+        animation->aria_pulse_history[j] = -1.0f;
+        animation->metroid_pulse_history[j] = -1.0f;
+    }
     for (int i = 0; i < PROTO_MAX_SECTIONS; ++i) {
         animation->previous[i] = config->sections[i];
         animation->morph[i] = 1.0f;
@@ -352,9 +356,27 @@ static void proto_fermat_impulse(float *x, float *y,
     *y = dx*sinf(angle) + dy*cosf(angle);
 }
 
+/* Patch 0036: button wave spacing is 50 ms, NOT the regular 400 ms.
+ * The global waveform is a maximum over 8 independent active 1.6s pulses;
+ * these are visual overlays, never replacements for the normal clock. */
+static float proto_visual_burst(const ProtoAnimation *a, bool aria, int index) {
+    if (!a) return -1.0f;
+    float maximum = -1.0f;
+    const float delay = 0.05f * (float)index;
+    for (int j = 0; j < 8; ++j) {
+        const float age = j == 0 ?
+            (aria ? a->aria_pulse_age : a->metroid_pulse_age) :
+            (aria ? a->aria_pulse_history[j-1] : a->metroid_pulse_history[j-1]);
+        const float value = proto_fermat_burst_progress(age - delay);
+        if (value >= 0.0f) maximum = fmaxf(maximum, value);
+    }
+    return maximum;
+}
+
 static void shape_point(const ProtoSection *s, float baseline, float u,
                         float start, float span, float t, float curl,
-                        float pulse_age, float *x, float *y) {
+                        float pulse_age, const ProtoAnimation *pulse_animation,
+                        float *x, float *y) {
     *x = baseline;
     *y = 0.0f;
     /* Patch 0032: permit diagonal curls to continue off-screen. */
@@ -362,6 +384,43 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
     if (s->formula == PROTO_WOLFRAM_RIBBON ||
         s->formula == PROTO_WOLFRAM_DOUBLE_RIBBON ||
         s->formula == PROTO_PINCHED_ROPE) return; /* Straight parent divider; tube is a filled mask. */
+    if (s->formula == PROTO_METROID_HORIZONTAL) {
+        /* Normal eight-tooth waveform plus an independent button wave. */
+        const float distance = -baseline;
+        if (distance < 0.0f || distance > span) return;
+        const float outer = span * (0.30f / 1.30f) / 0.80f;
+        const float inner = span - outer;
+        const float step = inner / 7.0f;
+        const int cell = distance < inner ?
+            (int)fminf(6.0f,floorf(distance / step)) : 7;
+        const float local = cell == 7 ?
+            (distance - inner) / outer : (distance - step*cell) / step;
+        const float p = fminf(1.0f,fmaxf(0.0f,local));
+        const float scale = 0.25f * exp2f(2.0f*(float)cell/7.0f);
+        const float normal = proto_fermat_offset_progress(t,s->phase_speed,
+                                                           cell,s->stagger_delay);
+        const float base_wave = proto_metroid_bipolar_value(cell,p);
+        const float beat = proto_visual_burst(pulse_animation,false,cell);
+        float overlay = 0.0f;
+        if (beat > 0.0f) {
+            /* Different moving shape: not a gain on the already-open bolt.
+             * Keeping a separate waveform makes the beat visible even when
+             * the normal triangle happens to be fully developed. */
+            const float window = sinf(PROTO_PI*p);
+            const float displaced = fminf(1.0f,fmaxf(0.0f,
+                p + 0.09f*sinf(2.0f*PROTO_PI*(1.65f*t + 0.17f*cell))));
+            const float moving = proto_metroid_bipolar_value(cell,displaced);
+            const float scratch = sinf(2.0f*PROTO_PI*(8.0f*p-6.0f*t)
+                                       +0.37f*(float)cell);
+            overlay = beat * (0.72f*moving + 0.48f*window*window*scratch);
+            /* The stretched/shifted input cannot bend either connector. */
+            const float a=smoothstep(p/0.08f);
+            const float b=smoothstep((1.0f-p)/0.08f);
+            overlay *= a*b;
+        }
+        *y = s->amplitude * scale * (normal * base_wave + overlay);
+        return;
+    }
     if (s->formula == PROTO_METROID_EIGHT) {
         /* Eight actual contiguous triangular periods of the given plot,
          * ordered from the line centre to the exterior of the Metroid half. */
@@ -392,6 +451,43 @@ static void shape_point(const ProtoSection *s, float baseline, float u,
         *y = s->amplitude * scale * growth * join *
              (signal * (1.0f+1.6f*pulse) +
               0.11f*pulse*sinf(50.0f*signal_x+8.0f*PROTO_PI*pulse_age/0.24f));
+        return;
+    }
+    if (s->formula == PROTO_FERMAT_HORIZONTAL) {
+        /* Preserve normal 5s curl; ADD a second 1.6s developed spiral.
+         * The two displacements are measured from the SAME straight
+         * baseline, so the normal motion never gets overwritten. */
+        if (s->cycles < 7.5f || s->cycles > 8.5f) return;
+        const float delay = s->stagger_delay > 0.0f ? s->stagger_delay : 0.4f;
+        for (int i = 0; i < 8; ++i) {
+            float begin,length;
+            proto_fermat_horizontal_cell(start,span,s->spiral_layout,i,
+                                          &begin,&length);
+            if (baseline < begin-0.0002f || baseline > begin+length+0.0002f)
+                continue;
+            const float p=fminf(1.0f,fmaxf(0.0f,(baseline-begin)/length));
+            const float normal=proto_fermat_offset_progress(t,s->phase_speed,i,delay);
+            const float shifted=t-delay*(float)i;
+            const float direction=proto_fermat_twist_direction(shifted,
+                s->phase_speed)*((i&1)?-1.0f:1.0f);
+            const float winding=0.25f+0.75f*(float)i/7.0f;
+            proto_fermat_horizontal_point(p,begin,length,i,s->amplitude,
+                                          normal,winding,direction,x,y);
+            const float beat=proto_visual_burst(pulse_animation,true,i);
+            if (beat > 0.0f) {
+                float pulse_x,pulse_y;
+                proto_fermat_horizontal_point(p,begin,length,i,s->amplitude,
+                                               beat,winding,direction,
+                                               &pulse_x,&pulse_y);
+                /* Independent circular shape, not a uniform y-only scale.
+                 * Gently limit stacked displacement to avoid clipped curls. */
+                const float gain=0.72f;
+                *x += gain*(pulse_x-baseline);
+                *y += gain*pulse_y;
+                if (i==7) *x=fmaxf(begin,*x); /* never cover cell 7 */
+            }
+            return;
+        }
         return;
     }
     if (s->formula == PROTO_FERMAT_DIAGONAL) {
@@ -656,7 +752,10 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
              * Keep legacy angle-aware profiles unchanged. */
             const float fixed_half_diagonal =
                 0.5f*hypotf((float)PROTO_WIDTH,(float)PROTO_HEIGHT);
-            const float extent = section->formula == PROTO_FERMAT_DIAGONAL ||
+            const float extent = section->formula == PROTO_FERMAT_HORIZONTAL ||
+                                 section->formula == PROTO_METROID_HORIZONTAL ?
+                                 0.65f * (float)PROTO_WIDTH :
+                                 section->formula == PROTO_FERMAT_DIAGONAL ||
                                  section->formula == PROTO_METROID_EIGHT ?
                                  fixed_half_diagonal : visible;
             start = index == 0 ? -extent : 0.0f;
@@ -682,7 +781,7 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
                     next.formula == PROTO_FERMAT_ROUND ? animation->aria_pulse_age :
                     next.formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age :
                     next.formula == PROTO_METROID_EIGHT ? animation->metroid_pulse_age : -1.0f,
-                    &xn, &yn);
+                    animation, &xn, &yn);
         shape_point(previous, base, u, start, span, animation->time,
                     previous->formula == PROTO_SPIRAL ? 1.0f - blend : 1.0f,
                     previous->formula == PROTO_FERMAT_TWIST ? animation->aria_pulse_age :
@@ -690,7 +789,7 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
                     previous->formula == PROTO_FERMAT_ROUND ? animation->aria_pulse_age :
                     previous->formula == PROTO_METROID_LIGHTNING ? animation->metroid_pulse_age :
                     previous->formula == PROTO_METROID_EIGHT ? animation->metroid_pulse_age : -1.0f,
-                    &xp, &yp);
+                    animation, &xp, &yp);
         /* Spiral curl is already driven by morph. Applying the blend a
          * second time would square its radius and hide the actual coil. */
         if (next.formula == PROTO_SPIRAL && previous->formula != PROTO_SPIRAL) {
@@ -729,6 +828,9 @@ void proto_make_frame(const ProtoConfig *config, const ProtoAnimation *animation
             frame->parametric = true;
     for (int side = 0; side < config->section_count; ++side)
         if (config->sections[side].formula == PROTO_FERMAT_DIAGONAL)
+            frame->parametric = true;
+    for (int side = 0; side < config->section_count; ++side)
+        if (config->sections[side].formula == PROTO_FERMAT_HORIZONTAL)
             frame->parametric = true;
     if (frame->parametric) proto_parametric_prepare(frame);
     proto_wolfram_ribbon_prepare(frame, config, animation);

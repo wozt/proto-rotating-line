@@ -36,6 +36,8 @@ void proto_fermat_twist_point(float p, float cell_start,
 void proto_fermat_packed_cell(float start, float span, int count, int index,
                               float *cell_start, float *cell_span);
 float proto_metroid_lightning_value(float x);
+/* Centered, +/-peak-balanced eight-tooth Metroid waveform. */
+float proto_metroid_bipolar_value(int tooth, float p);
 float proto_fermat_stagger_progress(float time, float speed,
                                     int index, float delay);
 float proto_fermat_bothways_progress(float time, float speed,
@@ -55,6 +57,12 @@ void proto_fermat_diagonal_point(float p,float cell_start,float cell_span,
                                   float progress,float winding,float direction,
                                   float *x,float *y);
 float proto_fermat_offset_progress(float time,float speed,int index,float delay);
+void proto_fermat_horizontal_cell(float start, float span, int layout,
+                                   int index, float *cell_start, float *cell_span);
+void proto_fermat_horizontal_point(float p, float cell_start, float cell_span,
+                                    int index, float amplitude, float growth,
+                                    float winding, float direction, float *x, float *y);
+float proto_fermat_burst_progress(float age);
 void proto_parametric_prepare(ProtoFrame *frame);
 float proto_parametric_side(const ProtoFrame *frame, float tangent, float normal);
 #endif

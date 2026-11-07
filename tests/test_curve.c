@@ -1384,5 +1384,214 @@ int main(void) {
         assert(w0>0.0f && w7==0.0f);
     }
 
+    /* Patch 0033: horizontal 156px fixed basis, 20% visible last root,
+     * four layouts, stable rotation geometry and genuine 1.1s beat. */
+    {
+        ProtoFormula h33,m33;
+        assert(proto_parse_formula("fermat_horizontal",&h33));
+        assert(proto_parse_formula("metroid_horizontal",&m33));
+        assert(h33==PROTO_FERMAT_HORIZONTAL && m33==PROTO_METROID_HORIZONTAL);
+        const float extent=0.65f*(float)PROTO_WIDTH;
+        const float visible=0.5f*(float)PROTO_WIDTH;
+        assert(fabsf(extent-156.0f)<.0001f);
+        const float ages[]={0.0f,.4f,.8f,1.2f,1.6f};
+        const float vals[]={0.0f,.5f,1.0f,.5f,-1.0f};
+        for(int k=0;k<5;++k)
+            assert(fabsf(proto_fermat_burst_progress(ages[k])-vals[k])<.0002f);
+        assert(proto_fermat_burst_progress(-1.0f)==-1.0f);
+        for(int layout=1;layout<=1;++layout) {
+            float last_end=0.0f, eighth_start=0.0f, eighth_width=0.0f;
+            for(int i=0;i<8;++i) {
+                float left,width;
+                proto_fermat_horizontal_cell(0,extent,layout,i,&left,&width);
+                assert(width>0.001f);
+                assert(fabsf(left-last_end)<0.0002f);
+                last_end=left+width;
+                if(i==7) {
+                    eighth_start=left;
+                    eighth_width=width;
+                    assert(fabsf((visible-left)/width-.20f)<.0001f);
+                    assert(fabsf(width-45.0f)<.0001f);
+                }
+                float x,y;
+                proto_fermat_horizontal_point(0.0f,left,width,i,15,1,
+                    .25f+.75f*i/7.0f,1,&x,&y);
+                assert(fabsf(x-left)<.0002f && fabsf(y)<.0002f);
+                proto_fermat_horizontal_point(1.0f,left,width,i,15,1,
+                    .25f+.75f*i/7.0f,1,&x,&y);
+                assert(fabsf(x-(left+width))<.0002f && fabsf(y)<.0002f);
+            }
+            assert(fabsf(last_end-extent)<.0002f);
+            assert(fabsf(eighth_start-111.0f)<.0002f);
+            assert(fabsf(eighth_width-45.0f)<.0002f);
+            float halfheight=0.0f;
+            for(int k=0;k<=2048;++k) {
+                float x,y;
+                proto_fermat_horizontal_point(k/2048.0f,eighth_start,
+                    eighth_width,7,15.0f,1.0f,1.0f,1.0f,&x,&y);
+                assert(isfinite(x) && isfinite(y));
+                halfheight=fmaxf(halfheight,fabsf(y));
+            }
+            assert(fabsf(2.0f*halfheight-53.333333f)<.25f);
+        }
+        ProtoConfig cfg33;
+        ProtoAnimation anim33;
+        ProtoFrame a33,b33;
+        proto_config_defaults(&cfg33);
+        cfg33.section_count=2; cfg33.rotation_speed=0.0f;
+        cfg33.sections[0].formula=PROTO_METROID_HORIZONTAL;
+        cfg33.sections[0].repeat_visible=true;
+        cfg33.sections[0].cycles=8.0f;
+        cfg33.sections[0].amplitude=30.0f;
+        cfg33.sections[0].phase_speed=.2f;
+        cfg33.sections[0].stagger_delay=.4f;
+        cfg33.sections[1].formula=PROTO_FERMAT_HORIZONTAL;
+        cfg33.sections[1].repeat_visible=true;
+        cfg33.sections[1].cycles=8.0f;
+        cfg33.sections[1].amplitude=15.0f;
+        cfg33.sections[1].phase_speed=.2f;
+        cfg33.sections[1].stagger_delay=.4f;
+        cfg33.sections[1].spiral_layout=3;
+        proto_animation_init(&anim33,&cfg33);
+        anim33.time=0.0f;
+        anim33.aria_pulse_age=.55f;
+        anim33.metroid_pulse_age=.55f;
+        proto_make_frame(&cfg33,&anim33,&a33);
+        anim33.rotation_degrees=55.0f;
+        proto_make_frame(&cfg33,&anim33,&b33);
+        assert(a33.parametric && b33.parametric);
+        int alive_left=0,alive_right=0;
+        for(int k=0;k<PROTO_PROFILE_SAMPLES;++k) {
+            const float base=-168.0f+336.0f*k/(PROTO_PROFILE_SAMPLES-1);
+            assert(fabsf(a33.x_coords[k]-b33.x_coords[k])<.01f);
+            assert(fabsf(a33.offsets[k]-b33.offsets[k])<.01f);
+            if(base>0.0f && base<110.0f) alive_right+=fabsf(a33.offsets[k])>.04f;
+            if(base<0.0f && base>-110.0f) alive_left+=fabsf(a33.offsets[k])>.04f;
+        }
+        assert(alive_left>3 && alive_right>3);
+        anim33.aria_pulse_age=-1.0f;
+        anim33.aria_pulse_history[0]=.55f;
+        anim33.aria_pulse_history[1]=-1.0f;
+        anim33.metroid_pulse_age=-1.0f;
+        anim33.metroid_pulse_history[0]=.55f;
+        anim33.metroid_pulse_history[1]=-1.0f;
+        proto_make_frame(&cfg33,&anim33,&b33);
+        for(int k=0;k<PROTO_PROFILE_SAMPLES;++k) {
+            assert(fabsf(a33.x_coords[k]-b33.x_coords[k])<.01f);
+            assert(fabsf(a33.offsets[k]-b33.offsets[k])<.01f);
+        }
+    }
+
+    /* Patch 0035: the outer curl may extend OUTWARD but never cross cell 6.
+     * Check every point, both directions and intermediate deploy fractions. */
+    {
+        float last_start, last_span;
+        proto_fermat_horizontal_cell(0.0f,156.0f,1,7,&last_start,&last_span);
+        assert(fabsf(last_start-111.0f)<.0002f);
+        assert(fabsf(last_span-45.0f)<.0002f);
+        const float fractions[] = {.001f,.05f,.25f,.5f,.75f,1.0f};
+        for (int g=0;g<6;++g) for (int dir=-1;dir<=1;dir+=2) {
+            for (int k=0;k<=4096;++k) {
+                const float p=(float)k/4096.0f;
+                float xx,yy;
+                proto_fermat_horizontal_point(p,last_start,last_span,7,15.0f,
+                                               fractions[g],1.0f,(float)dir,&xx,&yy);
+                assert(isfinite(xx)&&isfinite(yy));
+                assert(xx>=last_start-.0007f);
+            }
+        }
+        float halfheight=0.0f;
+        for (int k=0;k<=4096;++k) {
+            float xx,yy;
+            proto_fermat_horizontal_point((float)k/4096.0f,last_start,
+                                        last_span,7,15.0f,1.0f,1.0f,1.0f,&xx,&yy);
+            halfheight=fmaxf(halfheight,fabsf(yy));
+        }
+        assert(fabsf(2.0f*halfheight-(float)PROTO_HEIGHT/3.0f)<.25f);
+        assert(fabsf(proto_fermat_burst_progress(0.0f))<.0001f);
+        assert(fabsf(proto_fermat_burst_progress(.4f)-.5f)<.0002f);
+        assert(fabsf(proto_fermat_burst_progress(.8f)-1.0f)<.0001f);
+        assert(fabsf(proto_fermat_burst_progress(1.2f)-.5f)<.0002f);
+        assert(proto_fermat_burst_progress(1.6f)<0.0f);
+        /* 8th pulse cell starts after 7*0.05s, ends at 1.95s. */
+        assert(proto_fermat_burst_progress(.34f-7.0f*.05f)<0.0f);
+        assert(fabsf(proto_fermat_burst_progress(1.15f-7.0f*.05f)-1.0f)<.0002f);
+        /* Boundary regression for the last cell: 1.95 - 7*0.05. */
+        assert(proto_fermat_burst_progress(1.949f-7.0f*.05f)>=0.0f);
+        assert(proto_fermat_burst_progress(1.95f-7.0f*.05f)<0.0f);
+        assert(proto_fermat_burst_progress(1.951f-7.0f*.05f)<0.0f);
+        assert(proto_fermat_burst_progress(1.59999f)>=0.0f);
+        assert(proto_fermat_burst_progress(1.6f)<0.0f);
+    }
+
+    /* Patch 0036: balanced negative Metroid waveform, sharp teeth 3..8,
+     * and genuinely independent Aria/Metroid overlays. */
+    {
+        const float speed=.2f;
+        /* 7 * 50 ms = 350 ms; beat duration stays 1.6 seconds. */
+        assert(proto_fermat_burst_progress(0.34f-7*.05f)<0.0f);
+        assert(fabsf(proto_fermat_burst_progress(1.15f-7*.05f)-1.0f)<.0002f);
+        assert(proto_fermat_burst_progress(1.949f-7*.05f)>=0.0f);
+        assert(proto_fermat_burst_progress(1.95f-7*.05f)<0.0f);
+        for (int cell=0;cell<8;++cell) {
+            float pos=0.0f,neg=0.0f;
+            int changes=0,prior=0;
+            for (int j=0;j<=4096;++j) {
+                const float p=(float)j/4096.0f;
+                const float w=proto_metroid_bipolar_value(cell,p);
+                assert(isfinite(w));
+                pos=fmaxf(pos,w);
+                neg=fmaxf(neg,-w);
+                const int sign=w>.015f ? 1 : (w<-.015f ? -1 : 0);
+                if (sign && prior && sign!=prior) ++changes;
+                if (sign) prior=sign;
+            }
+            assert(fabsf(pos-1.0f)<.02f);
+            assert(fabsf(neg-1.0f)<.02f);
+            if (cell>=2) assert(changes>=5);
+        }
+        ProtoConfig cfg;
+        ProtoAnimation anim;
+        ProtoFrame base,metroid,aria;
+        proto_config_defaults(&cfg);
+        cfg.section_count=2;
+        cfg.rotation_speed=0;
+        cfg.sections[0].formula=PROTO_METROID_HORIZONTAL;
+        cfg.sections[0].cycles=8.0f;
+        cfg.sections[0].amplitude=30.0f;
+        cfg.sections[0].repeat_visible=true;
+        cfg.sections[0].phase_speed=speed;
+        cfg.sections[0].stagger_delay=.4f;
+        cfg.sections[1].formula=PROTO_FERMAT_HORIZONTAL;
+        cfg.sections[1].cycles=8.0f;
+        cfg.sections[1].amplitude=15.0f;
+        cfg.sections[1].spiral_layout=1;
+        cfg.sections[1].repeat_visible=true;
+        cfg.sections[1].phase_speed=speed;
+        cfg.sections[1].stagger_delay=.4f;
+        proto_animation_init(&anim,&cfg);
+        anim.time=1.7f;
+        proto_make_frame(&cfg,&anim,&base);
+        anim.metroid_pulse_age=.8f;
+        proto_make_frame(&cfg,&anim,&metroid);
+        anim.metroid_pulse_age=-1.0f;
+        anim.aria_pulse_age=.8f;
+        proto_make_frame(&cfg,&anim,&aria);
+        int metroid_effect=0,aria_effect=0;
+        for (int k=0;k<PROTO_PROFILE_SAMPLES;++k) {
+            const float baseline=-168.0f+336.0f*k/(PROTO_PROFILE_SAMPLES-1);
+            if (baseline<0.0f && baseline>-111.0f) {
+                metroid_effect += fabsf(metroid.offsets[k]-base.offsets[k])>.02f;
+                assert(fabsf(aria.offsets[k]-base.offsets[k])<.002f);
+            }
+            if (baseline>0.0f && baseline<105.0f) {
+                aria_effect += hypotf(aria.x_coords[k]-base.x_coords[k],
+                                     aria.offsets[k]-base.offsets[k])>.02f;
+                assert(fabsf(metroid.offsets[k]-base.offsets[k])<.002f);
+            }
+        }
+        assert(metroid_effect>8 && aria_effect>8);
+    }
+
     return 0;
 }

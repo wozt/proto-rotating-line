@@ -685,6 +685,63 @@ float proto_metroid_lightning_value(float x) {
            fmaxf(0.0f,x-6.5f)*0.2f*sinf(50.0f*x);
 }
 
+/* Patch 0036: use consecutive unit intervals of the requested Metroid
+ * formula, but cancel their mostly-positive hump so peaks are symmetric.
+ * Keep zero-valued endpoints; from the third tooth onward add fast bipolar
+ * oscillations at two spatial frequencies. Cache fixed normalizers once. */
+static float proto_metroid_0036_raw(int tooth, float p) {
+    p = fminf(1.0f, fmaxf(0.0f, p));
+    const float left = 1.0f + (float)tooth;
+    const float y0 = proto_metroid_lightning_value(left);
+    const float y1 = proto_metroid_lightning_value(left + 1.0f);
+    const float original = proto_metroid_lightning_value(left + p);
+    const float a = fminf(1.0f, p / 0.14f);
+    const float b = fminf(1.0f, (1.0f-p) / 0.14f);
+    const float envelope = a*a*(3.0f-2.0f*a) * b*b*(3.0f-2.0f*b);
+    float result = (original - (y0 + (y1 - y0)*p)) * envelope;
+    if (tooth >= 2) {
+        const float energy = 0.27f + 0.16f * (float)(tooth - 2);
+        const float soft = sinf(PI*p);
+        result += energy * soft*soft * (
+            0.92f*sinf(2.0f*PI*(5.5f+0.20f*tooth)*p + 0.41f*tooth) +
+            0.48f*sinf(2.0f*PI*(11.0f+0.42f*tooth)*p - 0.59f*tooth));
+    }
+    return result;
+}
+
+float proto_metroid_bipolar_value(int tooth, float p) {
+    if (tooth < 0) tooth = 0;
+    if (tooth > 7) tooth = 7;
+    p = fminf(1.0f,fmaxf(0.0f,p));
+    static float mean[8] = {0};
+    static float positive[8] = {0};
+    static float negative[8] = {0};
+    if (positive[tooth] == 0.0f) {
+        double sum = 0.0, denom = 0.0;
+        for (int k=0; k<=2048; ++k) {
+            const float q = (float)k / 2048.0f;
+            const double window = pow((double)sin(PI*q),2.0);
+            sum += proto_metroid_0036_raw(tooth,q);
+            denom += window;
+        }
+        mean[tooth] = (float)(sum / fmax(1.0,denom));
+        float pos=0.0f, neg=0.0f;
+        for (int k=0; k<=4096; ++k) {
+            const float q=(float)k/4096.0f;
+            const float w=sinf(PI*q);
+            const float v=proto_metroid_0036_raw(tooth,q)-mean[tooth]*w*w;
+            pos=fmaxf(pos,v);
+            neg=fmaxf(neg,-v);
+        }
+        negative[tooth]=fmaxf(1.0e-6f,neg);
+        positive[tooth]=fmaxf(1.0e-6f,pos);
+    }
+    if (p <= 0.0f || p >= 1.0f) return 0.0f;
+    const float w=sinf(PI*p);
+    const float v=proto_metroid_0036_raw(tooth,p)-mean[tooth]*w*w;
+    return v>=0.0f ? v/positive[tooth] : v/negative[tooth];
+}
+
 /* The same 7th-degree fast-midpoint easing as the Fermat twist. Each cell's
  * expansion begins late but is guaranteed to hit its shared peak at the SAME
  * global half-cycle boundary. Retraction remains synchronized and smooth. */
@@ -879,6 +936,111 @@ float proto_fermat_offset_progress(float time,float speed,int index,float delay)
     if (time <= offset) return 0.0f;
     return proto_fermat_twist_progress(time-offset,speed);
 }
+
+/* Patch 0033: horizontal reference: 120px visible per side, +30% offset.
+ * Endpoints are +/-156px; 45px of the final 45px cell extend from 111 to
+ * 156px, of which 9/45 = 20% precede the visible edge at 120px. */
+void proto_fermat_horizontal_cell(float start, float span, int layout, int index,
+                                  float *cell_start, float *cell_span) {
+    static const float weights[4][7] = {
+        {3.0f, 4.8f, 7.6f, 12.2f, 19.5f, 31.2f, 50.0f},
+        {6.0f, 6.9f, 8.9f, 12.4f, 18.4f, 28.7f, 46.9f},
+        {8.4f, 8.8f, 10.1f, 12.7f, 17.6f, 26.6f, 44.0f},
+        {11.6f, 11.7f, 12.2f, 13.5f, 16.7f, 23.5f, 39.2f}
+    };
+    if (layout < 1 || layout > 4) layout = 3;
+    if (index < 0) index = 0;
+    if (index > 7) index = 7;
+    const float outer = span * (0.30f / 1.30f) / 0.80f; /* 45px at 156px. */
+    const float inner = span - outer;                 /* 111px at 156px. */
+    if (index == 7) {
+        *cell_start = start + inner;
+        *cell_span = outer;
+        return;
+    }
+    float sum = 0.0f, before = 0.0f, after = 0.0f;
+    for (int i = 0; i < 7; ++i) {
+        const float w = weights[layout - 1][i];
+        sum += w;
+        if (i < index) before += w;
+        if (i <= index) after += w;
+    }
+    const float left = start + inner * before / sum;
+    const float right = index == 6 ? start + inner :
+                        start + inner * after / sum;
+    *cell_start = left;
+    *cell_span = right - left;
+}
+
+/* Round two-arm curl: radius is the SAME on X and Y inside the core.
+ * The final coil has a full 80px transverse envelope, but its straight
+ * anchors still occupy only a 45px local cell. No elliptical stretch.
+ * Four-percent parameter connectors preserve exact zero-height joins. */
+/* Patch 0035: the outer circle must not reach back into cell 6.
+ * A circular 53.33px-high coil has an actual radial scale larger than half
+ * the 45px anchor cell. Move its CENTER, not its x/y relative scale, toward
+ * the outside just enough for centre - animated_radius >= cell_start.
+ * This holds at every development fraction and both winding directions. */
+void proto_fermat_horizontal_point(float p, float cell_start, float cell_span,
+                                    int index, float amplitude, float growth,
+                                    float winding, float direction,
+                                    float *x, float *y) {
+    p = fmaxf(0.0f, fminf(1.0f, p));
+    growth = fmaxf(0.0f, fminf(1.0f, growth));
+    if (growth <= 0.00001f) {
+        *x = cell_start + p * cell_span;
+        *y = 0.0f;
+        return;
+    }
+    const float radius = index == 7 ?
+        ((float)PROTO_HEIGHT / 6.0f / proto_fermat_tall_reference_peak(7)) *
+        fmaxf(0.0f, amplitude) / 15.0f :
+        0.5f * cell_span * fmaxf(0.0f, amplitude) / 15.0f;
+    if (radius <= 0.00001f) {
+        *x = cell_start + p * cell_span;
+        *y = 0.0f;
+        return;
+    }
+    const float extent = radius * powf(growth, 0.58f);
+    const float original_centre = cell_start + 0.5f * cell_span;
+    /* By shifting only at the same rate as expansion, the limiting left
+     * extent is always >= cell_start, without introducing an x/y ellipse. */
+    const float centre = original_centre +
+        fmaxf(0.0f, radius - 0.5f * cell_span) * powf(growth, 0.58f);
+
+    /* Retain the generous smoothed connectors and rounded Fermat profile. */
+    const float q = p < 0.04f ? 5.0f * p :
+                    p > 0.96f ? 0.80f + 5.0f * (p - 0.96f) :
+                    0.20f + (p - 0.04f) * (0.60f / 0.92f);
+    if (q <= 0.20f) {
+        const float t = q / 0.20f;
+        const float smooth = t * t * (3.0f - 2.0f * t);
+        *x = cell_start + (centre - extent - cell_start) * smooth;
+        *y = 0.0f;
+    } else if (q >= 0.80f) {
+        const float t = (q - 0.80f) / 0.20f;
+        const float smooth = t * t * (3.0f - 2.0f * t);
+        *x = centre + extent +
+             (cell_start + cell_span - centre - extent) * smooth;
+        *y = 0.0f;
+    } else {
+        proto_fermat_twist_point(q, centre - radius, 2.0f * radius,
+                                 radius, growth, winding, direction, x, y);
+    }
+}
+
+/* Each individual 1.6s beat runs 0->1->0, 0.8s on each half.
+ * Pass age - index*0.3f to start the eight cells progressively. */
+float proto_fermat_burst_progress(float age) {
+    /* Account for float rounding at 3.7f - 7*0.3f (1.5999999f). */
+    if (!(age >= 0.0f && age < 1.6f - 1.0e-6f)) return -1.0f;
+    const float u = age < 0.8f ? age / 0.8f : (1.6f - age) / 0.8f;
+    const float t = fmaxf(0.0f, fminf(1.0f, u));
+    const float t2 = t * t;
+    const float t4 = t2 * t2;
+    return t4 * (35.0f + t * (-84.0f + t * (70.0f - 20.0f * t)));
+}
+
 
 void proto_parametric_prepare(ProtoFrame *frame) {
     memset(frame->cross_count, 0, sizeof frame->cross_count);
